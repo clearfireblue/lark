@@ -1,5 +1,5 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
-<title>Wonderlust</title>
+<title>Lark</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&display=swap" rel="stylesheet">
@@ -507,7 +507,7 @@ ul.pack li{display:flex;gap:10px;align-items:center;background:var(--field);bord
   <header class="house">
     <svg class="sigil" id="sigil" viewBox="0 0 100 118" role="img" aria-label="Arms"></svg>
     <div style="min-width:0">
-      <div class="eyebrow">Wonderlust</div>
+      <div class="eyebrow">Lark</div>
       <textarea class="hname" id="hname" rows="1" aria-label="Hero name" spellcheck="false"></textarea>
       <input class="hwords" id="hwords" aria-label="Epithet">
       <input class="hseat" id="hseat" aria-label="Background" readonly tabindex="-1">
@@ -1753,7 +1753,7 @@ function renderHeader(){
   const alive=H.members.filter(m=>!m.dead),adults=alive.filter(m=>isAdult(m));
   $('readout').innerHTML=`<div>Year ${yearOf(H.cycle)}<b>${seasonOf(H.cycle)}</b></div><div>Members<b>${alive.length}</b></div><div>Gold<b>${H.gold}</b></div><div>Influence<b>${H.influence}</b></div><div>Favor<b>${H.realm?H.realm.favor:0}</b></div>`;
 }
-const SECTIONS=[['hero','The Hero'],['band','Companions'],['adv','Adventures'],['realm','The Realm']]; /* Avelon's other sections are hidden */
+const SECTIONS=[['hero','The Hero'],['band','Companions'],['adv','Adventures'],['market','Market'],['realm','The Realm']]; /* Avelon's other sections are hidden */
 function renderNav(){
   $('sect').innerHTML=SECTIONS.map(([k,l,ph])=>`<button data-sec="${k}" ${section===k?'aria-current="page"':''}>${l}${ph?`<span class="soon">Phase ${ph}</span>`:''}</button>`).join('');
 }
@@ -1828,7 +1828,7 @@ function dossier(m){
     if(m.dead||m.merc)return '';const n=queuedIn(m,k),top=m.st[k]+n,cost=nextTrainCost(m,k);
     const pos=trainQ(m).findIndex(t=>t.k===k);
     const q=n?`<span class="q">+${n} in training → ${top}</span>${m.captive?' <span class="paused">paused while captive</span>':` <span class="muted">· next +1 ${pos===0?'at season’s end':'in '+(pos+1)+' seasons'}</span>`} <button data-untrain="${k}" aria-label="Cancel ${k} training">Cancel (refund ${trainQ(m).filter(t=>t.k===k).reduce((a,t)=>a+t.cost,0)})</button>`:'';
-    const buy=top>=10?'<span class="muted">At its height.</span>':`<button data-train="${k}" ${H.gold<cost?'disabled':''}>Train ${k} to ${top+1} · ${cost} gold</button>`;
+    const buy=top>=10?'':`<button data-train="${k}" ${H.gold<cost?'disabled':''}>Train ${k} to ${top+1} · ${cost} gold</button>`;
     return `<div class="train">${buy}${q}</div>`};
   const stats=STATS.map(k=>{
     const v=m.st[k],bonus=(k==='Might'?wVal(m.gear.weapon):0)+gearBonus(m,k);
@@ -4419,8 +4419,8 @@ const nextTrainCost=(m,k)=>2*(m.st[k]+queuedIn(m,k));
 /* the four stats together can never pass 32 (of a possible 40), so a hero must specialize */
 const STAT_CAP_TOTAL=32;
 const capLeft=m=>STAT_CAP_TOTAL-statSum(m)-trainQ(m).length;
-const capNote=m=>{const s=statSum(m),q=trainQ(m).length;return `<p class="help" style="margin-top:0">Stat total <b>${s}${q?' (+'+q+' in training)':''}</b> of ${STAT_CAP_TOTAL}. No one masters everything: once the four stats reach ${STAT_CAP_TOTAL} together, no more training.</p>`};
-const capMsg='<span class="muted">At the '+STAT_CAP_TOTAL+'-point limit.</span>';
+const capNote=m=>capLeft(m)<=0?`<p class="help" style="margin-top:0">Stats: ${STAT_CAP_TOTAL} of ${STAT_CAP_TOTAL}</p>`:'';
+const capMsg='';
 function buyTraining(m,k){
   if(!m||m.dead)return;const cost=nextTrainCost(m,k);
   if(m.st[k]+queuedIn(m,k)>=10||H.gold<cost||capLeft(m)<=0)return;
@@ -4438,7 +4438,7 @@ function settleTraining(){ /* the dead are refunded in full */
 }
 function trainingTurn(){
   settleTraining();
-  H.members.forEach(m=>{if(m.dead||m.captive||!m.train||!m.train.length)return;
+  H.members.forEach(m=>{if(m.dead||m.captive||m.stored||!m.train||!m.train.length)return;
     const steps=hasBoon(m,'tutor')?2:1;
     for(let s=0;s<steps&&m.train.length;s++){const t=m.train.shift();
     if(m.st[t.k]<10&&statSum(m)<STAT_CAP_TOTAL){m.st[t.k]++;m.trainedPts=(m.trainedPts||0)+1;H.log.push({cycle:H.cycle,text:`Training pays off${s?' (personal trainer)':''}: ${m.given}'s ${t.k} rises to ${m.st[t.k]}.`})}
@@ -4838,7 +4838,7 @@ const SPECIALTIES={
   'A tutor of letters':{price:16,boon:'letters',d:'Boon: each year, one child of the house gains an extra stat point'},
   'A herald':{price:18,boon:'herald',d:'Boon: each season, the most hostile house’s hostility falls by 1'}
 };
-const ITEM_SLOTS={weapon:'Weapon',armor:'Armor',heirloom:'Heirloom',specialty:'Specialty'};
+const ITEM_SLOTS={weapon:'Weapon',armor:'Armor',heirloom:'Heirloom',specialty:'Specialist'};
 const itemInfo=(slot,n)=>slot==='heirloom'?HEIRLOOMS[n]:slot==='specialty'?SPECIALTIES[n]:null;
 function itemDesc(slot,n){
   if(slot==='weapon')return '+'+wVal(n)+' to Might rolls';
@@ -5366,7 +5366,7 @@ function heroView(){
     <div class="slots">
       ${['weapon','armor','heirloom','specialty'].map(k=>`<div class="slot"><label for="g${k}-${m.id}">${ITEM_SLOTS[k]}</label><select id="g${k}-${m.id}" data-gear="${k}">${gearOptions(m,k)}</select><small>${m.gear[k]&&m.gear[k]!=='None'?esc(heroItemDesc(k,m.gear[k])):'Nothing carried here yet.'}</small></div>`).join('')}
     </div>
-    ${packView()}
+    <p class="muted" style="margin:6px 0 0;font-size:15px">Your pack holds ${H.armory.length} of ${packCap()}; see the Market tab.</p>
     ${houseView()}
     ${spouseView()}
     ${childrenView()}
@@ -5410,10 +5410,12 @@ function choiceForm(){
 function render(){
   if(!H)return;
   if(H.members)checkSuccession();
+  if(!H.creating)try{reclaimDead()}catch(e){}
+  if(H.ccourt&&!(H.members||[]).some(x=>x.comp&&!x.dead&&x.id===H.ccourt.id))H.ccourt=null;
   renderHeader();renderNav();
   const main=$('main');
   if(H.creating){$('sect').hidden=true;main.innerHTML=createView()}
-  else{$('sect').hidden=false;main.innerHTML=section==='adv'?advView():section==='realm'?realmView():section==='band'?bandView():heroView()}
+  else{$('sect').hidden=false;main.innerHTML=section==='adv'?advView():section==='market'?wlMarketView():section==='realm'?realmView():section==='band'?bandView():heroView()}
   renderSigilPicker();
   save();
   try{fitNames()}catch(e){}
@@ -5489,7 +5491,7 @@ function heroTrainRow(m,k){
   if(m.dead)return '';const n=queuedIn(m,k),top=m.st[k]+n,cost=nextTrainCost(m,k),Q=trainQ(m),pos=Q.findIndex(t=>t.k===k),steps=hasBoon(m,'tutor')?2:1;
   const when=pos<0?'':Math.floor(pos/steps)===0?'at season’s end':'in '+(Math.floor(pos/steps)+1)+' seasons';
   const q=n?`<span class="q">+${n} in training → ${top}</span>${H.adv&&H.adv.captive?' <span class="paused">paused while captive</span>':` <span class="muted">· next +1 ${when}</span>`} <button data-untrain="${k}" aria-label="Cancel ${k} training">Cancel (refund ${Q.filter(t=>t.k===k).reduce((a,t)=>a+t.cost,0)})</button>`:'';
-  const buy=top>=10?'<span class="muted">At its height.</span>':capLeft(m)<=0?capMsg:`<button data-train="${k}" ${H.gold<cost?'disabled':''}>Train ${k} to ${top+1} · ${cost} gold</button>`;
+  const buy=top>=10?'':capLeft(m)<=0?capMsg:`<button data-train="${k}" ${H.gold<cost?'disabled':''}>Train ${k} to ${top+1} · ${cost} gold</button>`;
   return `<div class="train">${buy}${q}</div>`;
 }
 
@@ -5556,7 +5558,7 @@ function genAdvBoard(){const kind=advSeason().kind,used=[],n=heroHas('lodestone'
   return out.sort((a,b)=>a.diff-b.diff)}
 
 /* boons from the hero's background, heirlooms or specialties */
-const heroHas=b=>{const m=heroOf();return (bgBoon(m)&&bgBoon(m).boon===b)||hasBoon(m,b)||!!(H.spouse&&!H.spouse.dead&&H.spouse.innate&&H.spouse.innate.boon===b)};
+const heroHas=b=>{const m=heroOf();return (bgBoon(m)&&bgBoon(m).boon===b)||hasBoon(m,b)||!!(H.spouse&&!H.spouse.dead&&H.spouse.innate&&H.spouse.innate.boon===b)||compMembers().some(c=>isFamily(c)&&c.innate&&!c.innate.spent&&c.innate.boon===b)};
 function advTarget(a,stat){
   const m=heroOf(),base=m.st[stat],wb=stat==='Might'?wVal(m.gear.weapon):0,gb=gearBonus(m,stat,a.op),pen=Math.max(0,a.diff-1-(heroHas('paths')&&a.kind==='Road'?1:0)-(heroHas('lantern')?1:0))+(placeHostile(placeOf(a))?1:0),rb=roadB(a,stat);
   return {base,wb,gb,pen,rb,t:base+wb+gb+rb-pen};
@@ -5626,6 +5628,8 @@ function finishAdv(cur){
   ripple(a,grade,out);warDeed(a,grade);
   if(m.dead)out.push(`${m.given} has fallen.`);
   else if(heroHas('salve')&&m.wounds>0){m.wounds--;out.push('The salve-horn mends 1 wound')}
+  band().forEach(c=>{if(!c.dead&&c.wounds>0&&hasBoon(c,'salve')){c.wounds--;out.push(`${c.given}’s salve-horn mends 1 wound`)}});
+  if(H.ccourt&&!m.dead){const c=compMembers().find(x=>x.id===H.ccourt.id);if(c&&!c.dead){H.ccourt.pts=Math.min(CC_NEED,H.ccourt.pts+1);out.push(H.ccourt.pts>=CC_NEED?`You and ${c.given} have ridden through enough together: you may propose`:`You and ${c.given} grow closer: ${H.ccourt.pts} of ${CC_NEED} adventures together`)}}
   cur.done=true;cur.grade=grade;cur.gains=out;
 }
 function closeAdv(){
@@ -5748,7 +5752,7 @@ const LOOT_HEIRLOOMS=Object.keys(HEIRLOOMS).filter(n=>!RELICS[n]&&!['cradle','cr
 const LOOT_SPECIALTIES=Object.keys(SPECIALTIES).filter(n=>n!=='Underground Contact'&&!['A concubine','A herald'].includes(n)&&!SPECIALTIES[n].taster&&!['tutor','midwife','letters','herald'].includes(SPECIALTIES[n].boon));
 const OP_KIND={Intrigue:'Court',Espionage:'Shadows',Battle:'Steel',Conquest:'Road'};
 function heroItemDesc(slot,n){
-  return itemDesc(slot,n).replace(/every (Intrigue|Espionage|Battle|Conquest) roll/,(x,o)=>`every roll on ${OP_KIND[o]} adventures`).replace('an operation','an adventure');
+  return itemDesc(slot,n).replace(/every (Intrigue|Espionage|Battle|Conquest) roll/,(x,o)=>`every roll on ${OP_KIND[o]} adventures`).replace(/\boperations?\b/g,w=>w==='operation'?'adventure':'adventures');
 }
 /* season-end boons: the courtesan's child and the minstrel's songs */
 function seasonBoons(say){
@@ -5759,8 +5763,43 @@ function seasonBoons(say){
   if(heroHas('minstrel')&&Math.random()<.5){const low=(H.rivals||[]).filter(r=>tenOf(r.name)>0).sort((a,b)=>tenOf(b.name)-tenOf(a.name))[0];
     if(low){bumpStanding(low.name,1,true);say(`Your minstrel’s songs soften House ${low.name}: now ${tenName(low.name)}.`,'good')}}
 }
-function childrenView(){const k=H.children||[];if(!k.length)return '';
-  return `<h3>Children</h3><ul class="quirks">${k.map(c=>`<li>${esc(c.given)} <span class="muted">· ${c.sp}, ${c.sex==='m'?'son':'daughter'}${c.bastard?', bastard':''}, ${c.age==null?Math.floor((H.cycle-c.born)/4):c.age}${(c.age||0)>=(SPECIES[c.sp]||SPECIES.Kin).adult?' · of age':''} · born ${seasonOf(c.born)} of year ${yearOf(c.born)}</span></li>`).join('')}</ul><p class="muted" style="margin:4px 0 0;font-size:15px">They grow up away from the road. Family and heirs arrive in Phase 4.</p>`}
+/* ---------- Lark: children of the hero and spouse ---------- */
+const isFamily=c=>!!(c&&c.comp&&c.comp.source==='family');
+const kidAge=c=>c.age==null?Math.floor((H.cycle-c.born)/4):c.age;
+const kidOfAge=c=>kidAge(c)>=(SPECIES[c.sp]||SPECIES.Kin).adult;
+/* each Winter, as in Pixavelon: odds by the mother's species and how many children the couple has; none outside her fertile years */
+function wlBirths(say){
+  const me=heroOf(),S=H.spouse;if(!me||me.dead||!S||S.dead||(H.adv&&H.adv.captive))return;
+  const mother=me.sex==='f'?me:S;if(!mother||mother.sex!=='f')return;const FS=spOf(mother).fert;if(mother.age<FS[0]||mother.age>FS[1])return;
+  const n=(H.children||[]).filter(c=>!c.bastard&&!c.dead).length+compMembers().filter(c=>isFamily(c)&&!c.child.bastard).length;
+  if(Math.random()>=birthOdds(mother,n)+(heroHas('midwife')?.1:0))return;
+  const sp=Math.random()<.5?(me.sp||'Kin'):(S.sp||'Kin'),sex=Math.random()<(SPECIES[sp].male||.5)?'m':'f';
+  const taken=new Set((H.children||[]).map(c=>c.given).concat(compMembers().map(c=>c.given),[me.given,S.given]));let given,t=0;do{given=nameFor(sex,sp)}while(taken.has(given)&&++t<60);
+  const c={given,sex,sp,born:H.cycle+1,age:0,traits:traitsFor(sp),look:(Math.floor(Math.random()*4294967295)>>>0)||1};
+  if(Math.random()<.5){const pool=[bgBoon(me),me.innate,S.innate].filter(b=>b&&b.boon);if(pool.length){const b=pick(pool);c.innate={boon:b.boon,name:b.name,d:b.d}}}
+  H.children=(H.children||[]).concat(c);
+  const word=sex==='m'?'son':'daughter';
+  say(`${S.given} and you welcome a ${word}: ${given}, ${sp}.${c.innate?` The blood runs true: ${c.innate.name}.`:''}`,'good');deed(`Your ${word} ${given} was born.`,'good');
+}
+/* a grown child rides with you: a companion with upkeep 1, whose inherited boon works while they ride */
+function kidRide(i){const c=(H.children||[])[i];if(!c||c.dead||!kidOfAge(c)||bandRoom()<=0||(H.adv&&H.adv.cur))return;
+  const age=kidAge(c),st=c.st||statsFor(age,null,c.sp);
+  const m={id:H.nextId++,given:c.given,sex:c.sex,sp:c.sp,age,title:c.sex==='m'?'Son':'Daughter',origin:'companion',from:'',parents:[H.hero],spouse:null,ruler:false,st,wounds:c.wounds||0,dead:false,
+    gear:{weapon:'Dagger',armor:'None',heirloom:'',specialty:''},traits:c.traits||traitsFor(c.sp),look:c.look||((Math.floor(Math.random()*4294967295)>>>0)||1),
+    comp:{kind:null,source:'family',fine:false,upkeep:1,house:''},child:{born:c.born,bastard:!!c.bastard},train:[]};
+  if(c.innate)m.innate=c.innate;if(c.trainedPts)m.trainedPts=c.trainedPts;m.kit=pick(KIT_BY[topStat(st)]);
+  H.children.splice(i,1);H.members.push(m);
+  H.log.push({cycle:H.cycle,text:`Your ${m.title.toLowerCase()} ${m.given} rides out with you (upkeep 1 gold a season).`});render();
+}
+/* back home from the band: keeps their stats, wounds and boon */
+function kidHome(c){
+  H.members=H.members.filter(m=>m!==c);
+  H.children=(H.children||[]).concat({given:c.given,sex:c.sex,sp:c.sp,born:c.child.born,age:c.age,bastard:c.child.bastard||undefined,st:c.st,wounds:c.wounds,
+    traits:c.traits,look:c.look,innate:c.innate,trainedPts:c.trainedPts});
+}
+function childrenView(){const k=H.children||[];if(!k.length)return '';const busy=!!(H.adv&&H.adv.cur),full=bandRoom()<=0;
+  return `<h3>Children</h3><ul class="quirks">${k.map((c,i)=>`<li>${esc(c.given)} <span class="muted">· ${c.sp}, ${c.sex==='m'?'son':'daughter'}${c.bastard?', bastard':''}, ${kidAge(c)}${kidOfAge(c)?' · of age':''} · born ${seasonOf(c.born)} of year ${yearOf(c.born)}</span>${c.innate?` <span class="boon">${esc(c.innate.name)}</span>`:''}${kidOfAge(c)&&!c.dead?` <button class="sm" data-kidride="${i}" ${busy||full?'disabled':''}>Ride with you</button>`:''}</li>`).join('')}</ul><p class="muted" style="margin:4px 0 0;font-size:15px">Children grow up at your hold. Once of age they can ride in your band (upkeep 1 gold a season), and an inherited boon works for you while they ride${full?'. Your band is full':''}. Any child of age can take up the name if you fall.</p>`}
+document.addEventListener('click',e=>{const t=e.target.closest('button[data-kidride]');if(!t||!H)return;kidRide(+t.dataset.kidride)});
 const PRIZE_ODDS=[0,.25,.4,.6];
 function rollPrize(diff){
   if(Math.random()>=PRIZE_ODDS[diff])return null;
@@ -6012,12 +6051,13 @@ function wlAgeTurn(say){
     if(g){me.dead=true;me.fell=`Died of old age at ${me.age}, in Winter of year ${yearOf(H.cycle+1)} (rolled ${g} against Grit ${me.st.Grit})`;say(`${me.given} dies of old age at ${me.age}.`,'bad');deed(`${me.given} died of old age at ${me.age}.`,'bad')}
     else if(me.age>=spOf(me).old)say(`${me.given} turns ${me.age}${me.age>=spOf(me).old+2?`, and feels the years (Grit ${me.st.Grit})`:''}.`,'')}
   /* companions */
-  compMembers().slice().forEach(c=>{c.age++;const g=oldAgeCheck(c);if(g)compRemove(c,`dies of old age at ${c.age}`,say)});
+  compMembers().concat(storedMembers()).forEach(c=>{c.age++;const g=oldAgeCheck(c);if(g)compRemove(c,`dies of old age at ${c.age}`,say)});
   if(H.compWait)H.compWait.age++;
   /* spouse */
   const S=H.spouse;if(S&&!S.dead){S.age++;if(S.st&&oldAgeCheck(S)){S.dead=true;say(`${S.given}, your ${S.sex==='m'?'husband':'wife'}, dies of old age at ${S.age}.`,'bad');deed(`${S.given} died of old age.`,'bad')}}
   /* children */
-  (H.children||[]).forEach(c=>{if(c.dead)return;c.age=(c.age==null?Math.floor((H.cycle-c.born)/4):c.age)+1;if(c.age===(SPECIES[c.sp]||SPECIES.Kin).adult)say(`${c.given} comes of age (${c.age}).`,'good')});
+  (H.children||[]).forEach(c=>{if(c.dead)return;c.age=(c.age==null?Math.floor((H.cycle-c.born)/4):c.age)+1;if(c.age===(SPECIES[c.sp]||SPECIES.Kin).adult)say(`${c.given} comes of age (${c.age}) and may ride with you.`,'good')});
+  wlBirths(say);
   /* the realm */
   const Rz=H.realm;if(Rz){if(Rz.king)Rz.king.age=(Rz.king.age||40)+1;if(Rz.heir)Rz.heir.age=(Rz.heir.age||10)+1}
   (H.rivals||[]).slice().forEach(r=>{if(!r.lord)return;r.lord.age=(r.lord.age||30)+1;const O=(SPECIES[r.sp]||SPECIES.Kin).old;
@@ -6116,10 +6156,14 @@ function finishCourt(cur,grade,out){
   const S=c.suitor;
   if(grade==='fail'){out.push(`${S.given} turns away. The courtship is over; House ${c.house} may send another next year`);H.suitorNo=H.suitorNo||{};H.suitorNo[c.house]=yearOf(H.cycle);H.court=null;return}
   c.points+=grade==='full'?2:1;out.push(`${S.given} warms to you: courtship ${Math.min(c.points,COURT_NEED)} of ${COURT_NEED}`);
-  if(c.points>=COURT_NEED){const r=rival(c.house),dowry=15+5*((r&&r.power)||1);H.gold+=dowry;
-    H.spouse={...S,wed:H.cycle,place:'home',dead:false};H.court=null;H.suitors={};
-    out.push(`You wed ${S.given} of House ${c.house}. They bring a dowry of ${dowry} gold and a boon of the blood: ${S.innate.name}`);deed(`You wed ${S.given} of House ${c.house}.`,'good')}
+  if(c.points>=COURT_NEED){c.ready=true;out.push(`${S.given} is willing. You may ask for their hand under Proposals on the Adventures board`)}
 }
+/* the wedding itself, only when the player proposes and confirms */
+function wedSuitor(){const c=H.court;if(!c||!c.ready||H.spouse)return;const S=c.suitor,out=[];
+  const r=rival(c.house),dowry=15+5*((r&&r.power)||1);H.gold+=dowry;
+    H.spouse={...S,wed:H.cycle,place:'home',dead:false};H.court=null;H.suitors={};H.adv.special=(H.adv.special||[]).filter(a=>!a.courtship);if(H.ccourt){const cc=compMembers().find(x=>x.id===H.ccourt.id);H.ccourt=null;if(cc)out.push(`Your courtship of ${cc.given} ends gracefully. No offense is taken.`)}
+    out.unshift(`You wed ${S.given} of House ${c.house}. They bring a dowry of ${dowry} gold and a boon of the blood: ${S.innate.name}.`);deed(`You wed ${S.given} of House ${c.house}.`,'good');
+  out.forEach(t=>H.log.push({cycle:H.cycle,text:t}));wedAsk=null;render()}
 
 /* ---------- 2b-4: the oath. A house you are Renowned with offers to make you its Lord Protector, with a castle ---------- */
 function ensureOath(){
@@ -6178,13 +6222,18 @@ function finishRoyal(cur,grade,out){
 function ensureSpecials(){
   ensureCourtship();ensureOath();ensureRoyal();
   H.adv.special=(H.adv.special||[]).filter(a=>a.made===H.cycle&&(a.royal?!!H.royalQ.cur:a.courtship?!!H.court:true));
-  if(H.court&&!H.adv.special.some(a=>a.courtship)&&H.court.last!==H.cycle)H.adv.special.push(genCourtAdv());
+  if(H.court&&!H.court.ready&&!H.adv.special.some(a=>a.courtship)&&H.court.last!==H.cycle)H.adv.special.push(genCourtAdv());
   const q=H.royalQ.cur;if(q&&!H.adv.special.some(a=>a.royal)&&q.last!==H.cycle)H.adv.special.push(genRoyalPart());
 }
 
 /* ---------- views ---------- */
 function proposalsView(){
   const cards=[];
+  if(H.court&&H.court.ready&&!H.spouse){const c=H.court,S=c.suitor,ask=wedAsk&&wedAsk.kind==='suitor';
+    cards.push(`<article class="opcard titlecard"><div class="optype">Courtship · House ${esc(c.house)}</div><div class="dhead" style="grid-template-columns:auto minmax(0,1fr);gap:10px">${portrait(S,72)}<div style="min-width:0"><h3>Ask for ${esc(S.given)}’s hand</h3>
+      <p class="muted" style="margin:2px 0 0;font-size:15px">${esc(S.sp)} of House ${esc(c.house)} · ${STATS.map(k=>k+' '+S.st[k]).join(', ')}</p><p style="margin:4px 0 0;font-size:16px"><span class="boon">${esc(S.innate.name)}</span> <span class="muted">· ${esc(S.innate.d)}</span></p></div></div>
+      <p class="muted" style="margin:0;font-size:15px">${esc(S.given)} is willing. ${ask?'<b>Wed for life? This cannot be undone.</b>':'Propose when you are ready, or withdraw gracefully.'}</p>
+      <div class="acts">${ask?`<button class="main" data-wedask="yes">Wed ${esc(S.given)}</button><button data-wedask="no">Not yet</button>`:`<button class="main" data-wedask="suitor">Propose</button><button data-rlm="withdraw|">Withdraw gracefully</button>`}</div></article>`)}
   Object.values(H.suitors||{}).forEach(S=>{if(!S)return;cards.push(`<article class="opcard titlecard"><div class="optype">Courtship · House ${esc(S.house)} offers a match</div>
     <div class="dhead" style="grid-template-columns:auto minmax(0,1fr);gap:10px">${portrait(S,72)}<div style="min-width:0"><h3>${esc(S.given)} of House ${esc(S.house)}</h3>
     <p class="muted" style="margin:2px 0 0;font-size:15px">${esc(S.sp)}, ${S.sex==='f'?'daughter':'son'} of the house · ${STATS.map(k=>k+' '+S.st[k]).join(', ')}</p>
@@ -6217,7 +6266,7 @@ function realmView(){
     :`<p class="muted" style="margin:8px 0 0;font-size:15px">Royal quests come to heroes Renowned with two or more houses. You are Renowned with ${renownedWith()}.${(Q.done||[]).length?` Quests done: ${Q.done.map(esc).join(', ')}.`:''}</p>`;
   const rel=[...(H.owars||[]).map(w=>`<li><b class="hot">At war:</b> ${w.split('|').map(k=>esc(entLabel(k))+(k.startsWith('o:')?' (outlaws)':'')).join(' and ')}</li>`),...Rz.wars.map(w=>`<li><b class="hot">At war:</b> House ${w.split('|').map(esc).join(' and House ')}</li>`),...Rz.alliances.map(w=>`<li><b>Allied:</b> House ${w.split('|').map(esc).join(' and House ')}</li>`)].join('')||'<li class="muted">The great houses are at peace, and bound to no one.</li>';
   const ravens=(H.adv.realmNews||[]).length?`<ul class="news">${H.adv.realmNews.map(n=>`<li class="${n.tone}">${esc(n.t)}</li>`).join('')}</ul>`:'<p class="muted" style="margin:0">No ravens yet. News arrives at the end of each season.</p>';
-  const me=[];if(H.sworn)me.push(`Sworn lord of House ${esc(H.sworn.house)}`);if(H.spouse)me.push(`Wed to ${esc(H.spouse.given)} of House ${esc(H.spouse.house)}`);if(H.court)me.push(`Courting ${esc(H.court.suitor.given)} of House ${esc(H.court.house)} (${H.court.points} of ${COURT_NEED})`);
+  const me=[];if(H.sworn)me.push(`Sworn lord of House ${esc(H.sworn.house)}`);if(H.spouse)me.push(`Wed to ${esc(H.spouse.given)} ${spouseFrom(H.spouse)}`);if(H.court)me.push(`Courting ${esc(H.court.suitor.given)} of House ${esc(H.court.house)} (${H.court.points} of ${COURT_NEED})`);
   return foldSec('crown','The crown','',`${crown}${quest}${me.length?`<p style="margin:8px 0 0">${me.join(' · ')}</p>`:''}`)
     +seatsView()
     +foldSec('ravens',(H.cycle>1?'Ravens of '+seasonOf(H.cycle-1):'Ravens'),'What happened in the realm last season',ravens)
@@ -6226,10 +6275,10 @@ function realmView(){
 }
 function spouseView(){
   const S=H.spouse;if(!S)return '';
-  return `<h3>Spouse</h3><div class="dhead" style="grid-template-columns:auto minmax(0,1fr);gap:12px">${portrait(S,72)}<div style="min-width:0"><p style="margin:0"><b>${esc(S.given)}</b> of House ${esc(S.house)} <span class="muted">· ${esc(S.sp)}</span></p>
+  return `<h3>Spouse</h3><div class="dhead" style="grid-template-columns:auto minmax(0,1fr);gap:12px">${portrait(S,72)}<div style="min-width:0"><p style="margin:0"><b>${esc(S.given)}</b> ${spouseFrom(S)} <span class="muted">· ${esc(S.sp)}</span></p>
     <p style="margin:2px 0 0;font-size:16px"><span class="boon">${esc(S.innate.name)}</span> <span class="muted">· ${esc(S.innate.d)}. Works for you.</span></p>
     ${S.dead?`<p class="muted" style="margin:4px 0 0">${esc(S.fell||'Fallen')}.</p>`:`<div class="seg" style="margin-top:6px"><button data-rlm="place|home" aria-pressed="${S.place!=='companion'}" ${H.adv&&H.adv.cur?'disabled':''}>Stays at your hold</button><button data-rlm="place|companion" aria-pressed="${S.place==='companion'}" ${S.place!=='companion'&&(bandRoom()<=0||(H.adv&&H.adv.cur))?'disabled':''}>Rides with you</button></div>
-    <p class="muted" style="margin:4px 0 0;font-size:15px">${S.place==='companion'?'Rides in your band and can take a stage of an adventure; see Companions.':bandRoom()<=0?'Your band is full.':'Home life arrives in Phase 4.'}</p>`}</div></div>`;
+    <p class="muted" style="margin:4px 0 0;font-size:15px">${S.place==='companion'?'Rides in your band and can take a stage of an adventure; see Companions.':bandRoom()<=0?'Your band is full.':'Keeps your hold and raises your children.'}</p>`}</div></div>`;
 }
 document.addEventListener('click',e=>{
   const t=e.target.closest('button[data-rlm]');if(!t||!H)return;const [k,v]=t.dataset.rlm.split('|');
@@ -6249,7 +6298,7 @@ document.addEventListener('click',e=>{
    Road adventures, title gifts at Esteemed and Celebrated renown, and a spouse who
    rides with you. Hired, rescued and gifted companions take upkeep each
    season (1 gold, 2 for the finer ones); a spouse rides for free.
-   They wear a weapon and armor from your pack and train like the hero.
+   They carry a weapon, armor, an heirloom and a specialist from your pack and train like the hero.
    ========================================================================== */
 const BAND_MAX=3;
 const COMP_ROLES={
@@ -6280,7 +6329,8 @@ function genCompanion(kind,source,fine,house){
   return c;
 }
 /* the band: companions in the household, and the spouse when they ride with you */
-const compMembers=()=>(H.members||[]).filter(m=>m.comp&&!m.dead);
+const compMembers=()=>(H.members||[]).filter(m=>m.comp&&!m.dead&&!m.stored);
+const storedMembers=()=>(H.members||[]).filter(m=>m.comp&&!m.dead&&m.stored);
 function ensureSpouseKit(){const S=H.spouse;if(!S)return;if(!S.gear)S.gear={weapon:'Dagger',armor:'None',heirloom:'',specialty:''};if(S.wounds==null)S.wounds=0;if(!S.kit)S.kit=pick(KIT_BY[topStat(S.st)]);S.id='sp'}
 const spouseRides=()=>!!(H.spouse&&!H.spouse.dead&&H.spouse.place==='companion');
 function band(){ensureSpouseKit();return compMembers().concat(spouseRides()?[H.spouse]:[])}
@@ -6288,7 +6338,7 @@ const bandRoom=()=>BAND_MAX-band().length;
 const compById=id=>id==='sp'?H.spouse:(H.members||[]).find(m=>m.comp&&m.id===+id);
 const canRide=c=>!!c&&!c.dead&&c.wounds<maxWounds(c);
 const roleOf=c=>c.id==='sp'?(c.sex==='m'?'Husband':'Wife'):c.title;
-const sourceLine=c=>c.id==='sp'?`of House ${esc(c.house)} · rides for free`:`${{hired:'Recruited',rescued:'Rescued',gift:'A gift of House '+esc(c.comp.house)}[c.comp.source]||'Recruited'} · upkeep ${c.comp.upkeep} gold a season`;
+const sourceLine=c=>c.id==='sp'?`${spouseFrom(c)} · rides for free`:isFamily(c)?`Your ${c.sex==='m'?'son':'daughter'}${c.child.bastard?', bastard':''} · upkeep 1 gold a season`:`${{hired:'Recruited',rescued:'Rescued',gift:'A gift of House '+esc(c.comp.house)}[c.comp.source]||'Recruited'} · upkeep ${c.comp.upkeep} gold a season`;
 
 /* joining the band, or waiting for a place in it */
 function compJoin(c,out,label){
@@ -6297,10 +6347,10 @@ function compJoin(c,out,label){
 }
 /* gear a companion carried comes back to your pack, or is sold if the pack is full */
 function returnGear(c,say){
-  ['weapon','armor'].forEach(k=>{const n=c.gear&&c.gear[k];if(!n||n==='None')return;
+  ['weapon','armor','heirloom','specialty'].forEach(k=>{const n=c.gear&&c.gear[k];if(!n||n==='None')return;
     if(H.armory.length<packCap()){H.armory.push({slot:k,name:n});say&&say(`${c.given}’s ${n} goes into your pack.`)}
     else{const g=sellPrice(k,n);H.gold+=g;say&&say(`No room in your pack for ${c.given}’s ${n}: sold for ${g} gold.`)}
-    c.gear[k]='None'});
+    c.gear[k]=k==='weapon'||k==='armor'?'None':''});
 }
 function refundTraining(c){const q=c.train||[];if(!q.length)return 0;const back=q.reduce((a,t)=>a+t.cost,0);c.train=[];H.gold+=back;return back}
 /* a companion leaves the band: dismissed, unpaid or fallen */
@@ -6308,6 +6358,7 @@ function compRemove(c,why,say){
   const back=refundTraining(c);if(back)say&&say(`${c.given}’s unfinished training is refunded: ${back} gold.`);
   returnGear(c,say);
   if(c.id==='sp'){c.place='home';return}
+  if(isFamily(c)&&!/fall|buried|dies|died/.test(why)){kidHome(c);const w=c.title.toLowerCase();H.log.push({cycle:H.cycle,text:`Your ${w} ${c.given} ${/unpaid|cannot|pay/.test(why)?'goes home: you could not pay their keep':'goes home to your hold'}.`});return}
   H.members=H.members.filter(m=>m!==c);
   H.log.push({cycle:H.cycle,text:`${c.given} the ${c.title.toLowerCase()} ${why}.`});deed(`${c.given} the ${c.title.toLowerCase()} ${why}.`,/fall|buried|dies|died/.test(why)?'bad':'');
 }
@@ -6328,9 +6379,11 @@ function rollCompStage(id){
   cur.used=cur.used||[];if(cur.used.includes(c.id))return;
   if(c.id!=='sp'&&!compMembers().includes(c))return;if(c.id==='sp'&&!spouseRides())return;
   const a=cur.a,st=a.stages[cur.stage],T=compTarget(c,a,st.stat);
-  const roll=1+Math.floor(Math.random()*10),ok=roll===1||(roll!==10&&roll<=T.t);let note='';
+  let roll=1+Math.floor(Math.random()*10),ok=roll===1||(roll!==10&&roll<=T.t),note='',pre='';
+  cur.cboon=cur.cboon||{};const cb=k=>cur.cboon[k+':'+c.id];
+  if(!ok&&hasBoon(c,'marble')&&!cb('marble')){cur.cboon['marble:'+c.id]=1;const r0=roll;roll=1+Math.floor(Math.random()*10);ok=roll===1||(roll!==10&&roll<=T.t);pre=`${c.given}’s luck turns (first rolled ${r0}). `}
   if(!ok){
-    const hit=n=>`${c.given} ${hurt(c,n)}`;
+    const hit=n=>{if(hasBoon(c,'shield')&&!cb('shield')){cur.cboon['shield:'+c.id]=1;n--;if(n<=0)return `${c.given} turns the blow aside and is unhurt`}return `${c.given} ${hurt(c,n)}`};
     if(st.stat==='Might'){const wn=a.special==='tourney'?1:Math.max(1,a.diff+(roll===10?1:0)-Math.floor(aVal(c.gear.armor)/2));note=hit(wn)+'.'}
     else if(a.kind==='Road'||a.kind==='Unrest')note=a.kind==='Unrest'?'The crowd will not be calmed.':'The villagers will not bend.';
     else if(a.kind==='Shadows'||a.kind==='Sinister'){note=`${c.given} is caught and fights free: `+hit(roll===10?2:1).replace(c.given+' ','')+'.';cur.spotted=true}
@@ -6338,6 +6391,7 @@ function rollCompStage(id){
       if(who&&rival(who)){note=`${c.given}’s words fall flat. House ${who} takes offense.`;if(!cur.offended){cur.offended=true;bumpStanding(who,-1)}}
       else note=`${c.given}’s words fall flat.`}
   }else note=roll===1?'Flawless.':'';
+  if(pre)note=pre+note;
   if(c.dead){c.fell=`Fell in ${seasonOf(H.cycle)} of year ${yearOf(H.cycle)}, on the adventure “${a.title}”`;cur.lost=(cur.lost||[]).concat([c.given]);
     const msgs=[];compRemove(c,'falls on the road and is buried there',t=>msgs.push(t));msgs.forEach(t=>H.log.push({cycle:H.cycle,text:t}));
     if(c.id==='sp')H.log.push({cycle:H.cycle,text:`${c.given}, your ${c.sex==='m'?'husband':'wife'}, falls on the adventure “${a.title}”.`})}
@@ -6387,8 +6441,8 @@ function recruitCard(a){
 
 /* ---------- the season turns: wounds mend, the spouse trains, upkeep is paid, the band ages ---------- */
 function compSeason(say){
-  compMembers().forEach(c=>{if(c.wounds>0)c.wounds--});
-  const S=H.spouse;if(S&&!S.dead){ensureSpouseKit();if(S.wounds>0)S.wounds--;
+  storedMembers().concat(compMembers()).forEach(c=>{if(c.wounds>0)c.wounds=Math.max(0,c.wounds-(hasBoon(c,'surgeon')?2:1))});
+  const S=H.spouse;if(S&&!S.dead){ensureSpouseKit();if(S.wounds>0)S.wounds=Math.max(0,S.wounds-(hasBoon(S,'surgeon')?2:1));
     if(!H.adv.captive&&S.train&&S.train.length){const t=S.train.shift();if(S.st[t.k]<10&&statSum(S)<STAT_CAP_TOTAL){S.st[t.k]++;say(`Training pays off: ${S.given}’s ${t.k} rises to ${S.st[t.k]}.`,'good')}else{H.gold+=t.cost}}}
   let owed=0;
   for(const c of compMembers().slice()){
@@ -6403,19 +6457,19 @@ function compTrainRow(c,k){
   const n=queuedIn(c,k),top=c.st[k]+n,cost=nextTrainCost(c,k),Q=trainQ(c),pos=Q.findIndex(t=>t.k===k);
   const when=pos<0?'':pos===0?'at season’s end':'in '+(pos+1)+' seasons';
   const q=n?`<span class="q">+${n} in training → ${top}</span> <span class="muted">· next +1 ${when}</span> <button data-cuntrain="${c.id}|${k}" aria-label="Cancel ${esc(c.given)}’s ${k} training">Cancel (refund ${Q.filter(t=>t.k===k).reduce((a,t)=>a+t.cost,0)})</button>`:'';
-  const buy=top>=10?'<span class="muted">At its height.</span>':capLeft(c)<=0?capMsg:`<button data-ctrain="${c.id}|${k}" ${H.gold<cost?'disabled':''}>Train ${k} to ${top+1} · ${cost} gold</button>`;
+  const buy=top>=10?'':capLeft(c)<=0?capMsg:`<button data-ctrain="${c.id}|${k}" ${H.gold<cost?'disabled':''}>Train ${k} to ${top+1} · ${cost} gold</button>`;
   return `<div class="train">${buy}${q}</div>`;
 }
 function compCard(c){
   const mw=maxWounds(c),hp=Array.from({length:mw},(_,i)=>`<i class="${i<c.wounds?'on':''} ${i>=c.st.Grit?'armor':''}"></i>`).join('');
   const busy=!!(H.adv&&H.adv.cur);
   const stats=capNote(c)+STATS.map(k=>`<span class="sn">${k}</span><span class="pips" aria-label="${k} ${c.st[k]} of 10">${Array.from({length:10},(_,i)=>`<i class="${i<c.st[k]?'on':''}"></i>`).join('')}</span><span class="sv">${c.st[k]}</span>${compTrainRow(c,k)}`).join('');
-  return `<article class="compcard"><div class="comphead"><figure style="margin:0;text-align:center">${portrait(c,72)}<figcaption class="muted" style="font-size:12px;letter-spacing:.04em;text-transform:uppercase;line-height:1.2;margin-top:2px">${esc(c.sp)} · ${c.sex==='m'?'he':'she'} · <span class="${c.age>=spOf(c).old?'hotc':''}">${c.age}</span></figcaption></figure><div style="min-width:0"><p style="margin:0"><b>${esc(c.given)}</b> <span class="muted">· ${esc(roleOf(c))} · ${esc(c.sp)}</span></p>
+  return `<article class="compcard"><div class="comphead"><figure style="margin:0;text-align:center">${portrait(c,72)}<figcaption class="muted" style="font-size:12px;letter-spacing:.04em;text-transform:uppercase;line-height:1.2;margin-top:2px">${esc(c.sp)} · ${c.sex==='m'?'he':'she'} · <span class="${c.age>=spOf(c).old?'hotc':''}">${c.age}</span></figcaption><button class="sm" style="margin:4px 0 0;font-size:13px;padding:2px 6px" data-crelook="${c.id}">Reroll look</button></figure><div style="min-width:0"><p style="margin:0"><b>${esc(c.given)}</b> <span class="muted">· ${esc(roleOf(c))} · ${esc(c.sp)}</span></p>
       <p class="muted" style="margin:2px 0 0;font-size:15px">${sourceLine(c)}${c.innate?` · <span class="boon">${esc(c.innate.name)}</span>`:''}</p>
       <p style="margin:4px 0 0;font-size:15px"><span class="hp" aria-label="${c.wounds} of ${mw} wounds taken">${hp}</span> <span class="muted">${c.wounds?`${c.wounds} of ${mw} wounds${c.wounds>=mw?' · too badly wounded to ride':''}`:'Hale'}</span></p></div></div>
     <div class="stats">${stats}</div>
-    <div class="slots">${['weapon','armor'].map(k=>`<div class="slot"><label for="cg${k}-${c.id}">${ITEM_SLOTS[k]}</label><select id="cg${k}-${c.id}" data-cgear="${c.id}|${k}">${gearOptions(c,k)}</select><small>${c.gear[k]&&c.gear[k]!=='None'?esc(heroItemDesc(k,c.gear[k])):'Nothing carried here.'}</small></div>`).join('')}</div>
-    <div class="acts">${c.id==='sp'?`<button data-rlm="place|home" ${busy?'disabled':''}>Send home to your hold</button>`:`<button class="danger" data-cdismiss="${c.id}" ${busy?'disabled':''}>Send away</button>`}</div></article>`;
+    <div class="slots">${['weapon','armor','heirloom','specialty'].map(k=>`<div class="slot"><label for="cg${k}-${c.id}">${ITEM_SLOTS[k]}</label><select id="cg${k}-${c.id}" data-cgear="${c.id}|${k}">${gearOptions(c,k)}</select><small>${c.gear[k]&&c.gear[k]!=='None'?esc(heroItemDesc(k,c.gear[k]))+(compIdle(k,c.gear[k])?' · no effect on a companion':''):'Nothing carried here.'}</small></div>`).join('')}</div>
+    ${ccourtLine(c)}<div class="acts">${ccourtBtns(c)}${c.id==='sp'?`<button data-rlm="place|home" ${busy?'disabled':''}>Send home to your hold</button>`:`${isFamily(c)?'':`<button data-cstore="${c.id}" ${busy?'disabled':''}>Store at your home</button>`}<button class="${isFamily(c)?'':'danger'}" data-cdismiss="${c.id}" ${busy?'disabled':''}>${isFamily(c)?'Send home to your hold':'Send away'}</button>`}</div></article>`;
 }
 function bandView(){
   ensureSpouseKit();const B=band(),up=compMembers().reduce((a,c)=>a+c.comp.upkeep,0),S=H.spouse;
@@ -6425,9 +6479,8 @@ function bandView(){
   const home=S&&!S.dead&&S.place!=='companion'?`<p style="margin:8px 0 0">${esc(S.given)}, your ${S.sex==='m'?'husband':'wife'}, stays at your hold. <button class="sm" data-rlm="place|companion" ${bandRoom()<=0||(H.adv&&H.adv.cur)?'disabled':''}>Ride with you</button>${bandRoom()<=0?' <span class="muted">Your band is full.</span>':''}</p>`:'';
   const body=B.length?`<div class="compgrid">${B.map(compCard).join('')}</div>`:`<p class="muted" style="margin:0">You ride alone. Each season the board offers a chance to recruit someone of the season’s kind: courtiers and bards in Winter, spies and cutthroats in Spring, sellswords in Summer, scouts in Fall. Some Shadows and Road adventures free a captive who may ride with you, and the great houses may gift you a sworn companion with a title.</p>`;
   return wait+`<section class="pane"><div class="boardhead"><h2>Your band · ${B.length} of ${BAND_MAX}</h2><span class="muted" style="font-size:15px">${up?`Upkeep ${up} gold a season · `:''}${H.gold} gold</span></div>
-    <p class="muted" style="margin:0 0 10px;font-size:16px">On an adventure each companion can take one stage in your place, and takes the wounds if it goes wrong. They mend 1 wound a season, wear a weapon and armor from your pack, and train like you. Upkeep is paid at season’s end; anyone you cannot pay leaves.</p>
-    ${body}${home}</section>
-    <section class="pane">${packView()}</section>`;
+    <p class="muted" style="margin:0 0 10px;font-size:16px">On an adventure each companion can take one stage in your place, and takes the wounds if it goes wrong. They mend 1 wound a season, carry a weapon, armor, an heirloom and a specialist from your pack, and train like you. Upkeep is paid at season’s end; anyone you cannot pay leaves.</p>
+    ${body}${home}</section>${storedView()}`;
 }
 document.addEventListener('click',e=>{
   const t=e.target.closest('button');if(!t||!H)return;const d=t.dataset;
@@ -6621,13 +6674,17 @@ function roadHurt(who,n,cur,a){
 const roadGold=n=>{H.gold+=n;return `+${n} gold`};
 const lootItem=()=>Math.random()<.5?{slot:'heirloom',name:pick(LOOT_HEIRLOOMS)}:{slot:'specialty',name:pick(LOOT_SPECIALTIES)};
 function rumorPlace(kind,house,how,set){
-  ensurePlaces();house=house||pick(H.rivals).name;
+  ensurePlaces();ensureWlMinors();house=house||pick(H.rivals).name;
+  /* a minor house's hall: one in these lands, or any still unknown */
+  if(kind==='manor'){const hid=H.places.filter(p=>p.hidden&&p.kind==='manor'&&p.holder&&p.holder.t==='minor'),here=hid.filter(p=>p.house===house);
+    if(hid.length){const P=reveal(pick(here.length?here:hid));if(set)set(P);histPush(P,`${whenC(H.cycle)}: ${how}`);return P}
+    const P={id:'P'+(++H.placeSeq),name:placeName('manor'),kind:'manor',house,holder:{t:'minor',n:minorFor(house)},mood:0,hist:[],land:true,found:H.cycle};if(set)set(P);histPush(P,`${whenC(H.cycle)}: ${how}`);H.places.push(P);ensureWlMinors();return P}
   {const hid=H.places.filter(p=>p.hidden&&p.house===house&&p.kind===kind);if(hid.length){const P=reveal(pick(hid));if(set)set(P);histPush(P,`${whenC(H.cycle)}: ${how}`);return P}}
   const P={id:'P'+(++H.placeSeq),name:placeName(kind),kind,house,str:kind==='lair'?1:undefined,holder:kind==='lair'?{t:'brood',n:pick(BROODS)}:kind==='ruin'?null:kind==='fort'?{t:'bandit',n:banditCo()}:{t:'house',n:house},mood:0,hist:[],found:H.cycle};
   if(set)set(P);histPush(P,`${whenC(H.cycle)}: ${how}`);H.places.push(P);
   return P;
 }
-const placeLine=P=>`${P.name}, ${aOr(PLACE_KIND[P.kind])} in House ${P.house}’s lands, joins your map`;
+const placeLine=P=>`${P.name}, ${aOr(PLACE_KIND[P.kind])} in House ${P.house}’s lands${P.holder&&P.holder.t==='minor'?`, seat of House ${P.holder.n}`:''}, joins your map`;
 function roadFoe(ctx){
   const g=Object.entries(H.grudge||{}).filter(([k,v])=>v<=-1).sort((a,b)=>a[1]-b[1])[0];
   if(g){const [t,n]=g[0].split(':');return t==='bandit'?cap1(n):'Men of House '+n}
@@ -6645,7 +6702,7 @@ const ROAD=[
  {k:'pilgrims',n:'Pilgrims on the road',w:5,t:()=>'A column of pilgrims shuffles past. One of them knows something and is not saying it.',
   o:()=>[{id:'draw',label:'Draw them out',sub:'Insight roll: a rumor',roll:'Insight'},{id:'alms',label:'Give alms',cost:2,sub:'+1 on your first stage'},{id:'pray',label:'Pray with them',need:'Court',sub:'The rumor, no roll'}],
   r(id,x){if(id==='alms'){x.cur.rb.first++;return ['The pilgrims bless your road: +1 on your first stage.']}
-   const rumor=()=>{const P=rumorPlace(pick(['ruin','lair','village','crossing']),x.house,'a pilgrim spoke of it');return `The pilgrim speaks of ${P.name}. ${placeLine(P)}.`};
+   const rumor=()=>{const P=rumorPlace(pick(['ruin','lair','village','crossing','manor']),x.house,'a pilgrim spoke of it');return `The pilgrim speaks of ${P.name}. ${placeLine(P)}.`};
    if(id==='pray')return [`${x.c.given} kneels with them through vespers.`,rumor()];
    const R=roadRoll(x.hero,'Insight');return R.ok?[`You win their trust (${R.txt}).`,rumor()]:[`They close ranks and say nothing (${R.txt}).`]}},
  {k:'hostage',n:'Hostage drop',w:3,t:()=>'Reavers are trading a bound prisoner for silver, and you have walked into the middle of it.',
@@ -6667,7 +6724,7 @@ const ROAD=[
   r(id,x){if(id==='read'){x.cur.rider=Math.random()<.5?'news':'trap';return [`${x.c.given} studies the ridge: ${x.cur.rider==='news'?'he rides alone':'there are others in the trees'}.`]}
    if(id==='ride'){x.cur.rider=null;return ['You keep your own counsel and ride on.']}
    const t=x.cur.rider||(Math.random()<.5?'news':'trap');x.cur.rider=null;
-   if(t==='news'){const P=rumorPlace(pick(['ruin','fort','lair','crossing','village']),x.house,'a lone rider brought word of it');return ['His news is honest.',`${placeLine(P)}.`]}
+   if(t==='news'){const P=rumorPlace(pick(['ruin','fort','lair','crossing','village','manor']),x.house,'a lone rider brought word of it');return ['His news is honest.',`${placeLine(P)}.`]}
    const R=roadRoll(x.hero,'Might');return ['It is a trap!',R.ok?`You cut your way out (${R.txt}).`:roadHurt(x.hero,1,x.cur,x.a)+` (${R.txt}).`]}},
  {k:'herbs',n:'Herb-seller',w:4,t:()=>'A peddler works the road with a cart of tinctures and charms. Half of it is real. You need to work out which half.',
   o:x=>[{id:'buy',label:'Buy a salve',cost:3,sub:'Insight roll: mend 1 wound, or it is chalk',roll:'Insight'},{id:'pass',label:'Pass by'},{id:'haggle',label:'Haggle',need:'Court',cost:1,sub:'Half price, and the real thing'}],
@@ -6726,7 +6783,7 @@ const ROAD=[
    const R=roadRoll(x.hero,'Grit');return R.ok?loot([`You pick your way down the rubble (${R.txt}).`]):[roadHurt(x.hero,1,x.cur,x.a)+` when the stair collapses (${R.txt}).`]}},
  {k:'fireside',n:'Fireside boasting',w:4,t:()=>'Travelers share a fire by the road, and every one of them has a tale.',
   o:()=>[{id:'tell',label:'Tell your tale',sub:'Insight roll: eases your patron’s tension, or a rumor',roll:'Insight'},{id:'listen',label:'Listen',sub:'A rumor, no roll'}],
-  r(id,x){const rumor=()=>{const P=rumorPlace(pick(['ruin','lair','fort','village','crossing','wilds']),x.house,'a tale told at a roadside fire');return `${placeLine(P)}.`};
+  r(id,x){const rumor=()=>{const P=rumorPlace(pick(['ruin','lair','fort','village','crossing','wilds','manor']),x.house,'a tale told at a roadside fire');return `${placeLine(P)}.`};
    if(id==='listen')return ['You keep quiet and listen.',rumor()];
    const R=roadRoll(x.hero,'Insight');if(!R.ok)return [`Your tale falls flat (${R.txt}).`];
    if(x.a.patron&&rival(x.a.patron)&&tenOf(x.a.patron)>0&&Math.random()<.25){bumpStanding(x.a.patron,1,true);return [`Your tale travels (${R.txt}). House ${x.a.patron} warms to you: now ${tenName(x.a.patron)}.`]}
@@ -7060,6 +7117,13 @@ function seatsView(){
 /* ---------- minor houses: Avelon's roster, sworn to the great houses or standing alone. Strength 1–3; they grow, and the manors they hold are theirs ---------- */
 function ensureWlMinors(){
   if(!Array.isArray(H.minors))return;
+  /* Avelon's two starting retainers do not fit a lone hero: bannermen come only once you found a house */
+  if(H.minors.some(x=>x.liege===YOU&&!x.banner))H.minors=H.minors.filter(x=>!(x.liege===YOU&&!x.banner));
+  /* every minor house not sworn to you has a hall on the map, hidden until found */
+  if(Array.isArray(H.places)&&(H.rivals||[]).length)H.minors.forEach(x=>{if(x.hallMade||x.liege===YOU||x.landless||x.name===H.house.minor)return;x.hallMade=true;
+    if(H.places.some(p=>p.holder&&p.holder.t==='minor'&&p.holder.n===x.name))return;
+    const r=rival(x.liege)||pick(H.rivals),nm0=x.estate&&x.estate.name?x.estate.name+' Hall':'',used=new Set(H.places.map(p=>String(p.name).toLowerCase()));
+    H.places.push({id:'P'+(++H.placeSeq),name:nm0&&!used.has(nm0.toLowerCase())?nm0:placeName('manor'),kind:'manor',house:r.name,holder:{t:'minor',n:x.name},mood:0,hist:[],land:!!rival(x.liege),hidden:true})});
   /* every minor house that holds a manor is on the roster */
   const taken=new Set([H.house.name,H.house.minor].concat(H.rivals.map(r=>r.name)).concat(H.minors.map(x=>x.name)).filter(Boolean).map(n=>n.toLowerCase()));
   (H.places||[]).forEach(p=>{if(!p.holder||p.holder.t!=='minor')return;const n=p.holder.n;if(H.minors.some(x=>x.name===n)||n===H.house.minor)return;
@@ -7221,7 +7285,7 @@ function yourSeat(C,say){const fallen=C.fallen;let n=0;
 }
 /* ---------- heirs: who takes up the name ---------- */
 function heirCandidates(){const out=[];
-  compMembers().forEach(c=>out.push({kind:'c',id:c.id,who:c,role:c.title}));
+  compMembers().concat(storedMembers()).forEach(c=>out.push({kind:'c',id:c.id,who:c,role:c.title}));
   if(H.spouse&&!H.spouse.dead)out.push({kind:'s',id:0,who:H.spouse,role:H.spouse.sex==='m'?'Husband':'Wife'});
   (H.children||[]).forEach((c,i)=>{const y=c.age==null?Math.floor((H.cycle-c.born)/4):c.age;if(y>=(SPECIES[c.sp]||SPECIES.Kin).adult&&!c.dead)out.push({kind:'k',id:i,who:c,role:`${c.sex==='m'?'Son':'Daughter'}, ${y}`})});
   return out;
@@ -7230,8 +7294,8 @@ function takeUp(kind,id){const old=heroOf();if(!old||!old.dead||!H.myHouse)retur
   if(kind==='c'){m=(H.members||[]).find(x=>x.id===+id&&x.comp&&!x.dead);if(!m)return;delete m.comp}
   else if(kind==='s'){const S=H.spouse;if(!S||S.dead)return;m={...S,id:H.nextId++,origin:'born',from:'',parents:[],spouse:null,title:S.sex==='m'?'Lord':'Lady'};delete m.place;delete m.house;H.members.push(m);H.spouse=null}
   else{const c=(H.children||[])[+id];if(!c)return;const age=c.age==null?Math.floor((H.cycle-c.born)/4):c.age;
-    m={id:H.nextId++,given:c.given,sex:c.sex,sp:c.sp,age,title:c.sex==='m'?'Lord':'Lady',origin:'born',from:'',parents:[old.id],spouse:null,st:statsFor(age,null,c.sp),wounds:0,dead:false,
-      gear:{weapon:'Dagger',armor:'None',heirloom:'',specialty:''},traits:traitsFor(c.sp),look:(Math.floor(Math.random()*4294967295)>>>0)||1};
+    m={id:H.nextId++,given:c.given,sex:c.sex,sp:c.sp,age,title:c.sex==='m'?'Lord':'Lady',origin:'born',from:'',parents:[old.id],spouse:null,st:c.st||statsFor(age,null,c.sp),wounds:0,dead:false,
+      gear:{weapon:'Dagger',armor:'None',heirloom:'',specialty:''},traits:c.traits||traitsFor(c.sp),look:c.look||((Math.floor(Math.random()*4294967295)>>>0)||1)};if(c.innate)m.innate=c.innate;if(c.bastard)m.bastard=true;
     H.children.splice(+id,1);H.members.push(m)}
   m.ruler=true;m.bg=old.bg;m.liege=old.liege;m.wounds=0;m.dead=false;if(!m.gear)m.gear={weapon:'Dagger',armor:'None',heirloom:'',specialty:''};if(!m.kit)m.kit=pick(KIT_BY[topStat(m.st)]);
   old.ruler=false;H.hero=m.id;H.adv.cur=null;H.adv.captive=null;sel=m.id;
@@ -7372,6 +7436,122 @@ function start(d){
 }
 try{window.claude?.hot?.snapshot(()=>({H,sel,section,activeSlot}))}catch(e){}
 window.claude?.hot?.ready?window.claude.hot.ready(start):start(window.claude?.hot?.data??{});
+
+/* ==========================================================================
+   LARK — the Market tab, as in Pixavelon: the smiths, heirlooms and specialists
+   restock each season; what you buy goes into your pack (10 + Grit), where you
+   can equip it on the hero or a companion, or sell it for half its price.
+   ========================================================================== */
+function wlStock(){ensureMarket();const M=H.market;
+  if(M.wl!==H.cycle){M.wl=H.cycle;M.heirloom=shuffle(LOOT_HEIRLOOMS.slice()).slice(0,3);M.specialty=shuffle(LOOT_SPECIALTIES.slice()).slice(0,4)}
+  return M}
+const wlPrice=(slot,n)=>slot==='weapon'||slot==='armor'?PRICES[slot][n]:(itemInfo(slot,n)||{}).price||0;
+function wlBuy(slot,n){const M=wlStock(),p=wlPrice(slot,n);if(!p||H.gold<p||H.armory.length>=packCap()||!(M[slot]||[]).includes(n))return;
+  H.gold-=p;H.armory.push({slot,name:n});M[slot].splice(M[slot].indexOf(n),1);
+  H.log.push({cycle:H.cycle,text:`Bought ${n} for ${p} gold. It goes into your pack.`});render()}
+/* who can wear it: the hero wears anything; companions carry a weapon and armor only */
+function wlWearers(it){const me=heroOf(),out=[];if(me&&!me.dead&&improves(me,it.slot,it.name))out.push({id:'h',m:me,role:'You'});
+  band().forEach(c=>{if(!c.dead&&compImproves(c,it.slot,it.name))out.push({id:String(c.id),m:c,role:roleOf(c)})});
+  return out}
+function wlEquip(i,who){const it=H.armory[i];if(!it)return;const m=who==='h'?heroOf():compById(who);if(!m)return;
+  const old=m.gear[it.slot];equip(m,it.slot,it.name);
+  H.log.push({cycle:H.cycle,text:`${m===heroOf()?'You take up':m.given+' takes up'} ${it.name}${old&&old!=='None'?`; ${old} goes into your pack`:''}.`});render()}
+function wlMarketView(){
+  const M=wlStock(),cap=packCap(),n=H.armory.length,full=n>=cap;
+  const row=(slot,nm)=>{const p=wlPrice(slot,nm),own=H.armory.filter(x=>x.slot===slot&&x.name===nm).length;
+    return `<li class="ware"><span style="flex:1;min-width:0"><b>${esc(nm)}</b>${own?` <span class="muted">· ${own} in your pack</span>`:''}<br><span class="muted">${esc(heroItemDesc(slot,nm))}</span></span><button class="sm" data-wlbuy="${slot}|${esc(nm)}" ${H.gold>=p&&!full?'':'disabled'}>Buy · ${p} gold</button></li>`};
+  const stock=slot=>(M[slot]||[]).length?M[slot].map(nm=>row(slot,nm)).join(''):'<li class="muted">Sold out until next season.</li>';
+  const pack=n?`<ul class="wares">${H.armory.map((it,i)=>{const W=wlWearers(it);
+    return `<li class="ware"><span style="flex:1;min-width:0"><span class="tk" style="color:var(--gold)">${ITEM_SLOTS[it.slot]}</span><b>${esc(it.name)}</b>${RELICS[it.name]?' <span class="muted">· relic</span>':''}<br><span class="muted">${esc(heroItemDesc(it.slot,it.name))}</span></span>
+      <span class="give">${W.length?`<select id="wleq-${i}" aria-label="Equip ${esc(it.name)} on">${W.map(w=>{const cur=w.m.gear[it.slot];return `<option value="${w.id}">${esc(w.m.given)} · ${esc(w.role)} · ${cur&&cur!=='None'?'replaces '+esc(cur):'empty slot'}</option>`}).join('')}</select><button class="sm" data-wleq="${i}">Equip</button>`:'<span class="muted" style="font-size:14px">No one would be better off with it</span>'}<button class="sm" data-wlsell="${i}">Sell · ${sellPrice(it.slot,it.name)} gold</button></span></li>`}).join('')}</ul>`
+    :'<p class="muted" style="margin:0">Empty. What you buy, win or take off lands here.</p>';
+  const F=(k,title,sub,body)=>`<section class="pane fold"><details data-fold="${k}" ${foldOpen(k)?'open':''}><summary><h2>${title}</h2>${sub?`<span class="muted">${sub}</span>`:''}</summary><div class="foldbody">${body}</div></details></section>`;
+  return `${F('mkt','The market',`${seasonOf(H.cycle)}, year ${yearOf(H.cycle)} · ${H.gold} gold`,`<div class="cyclebar"><p style="margin:0;flex:1;min-width:14em">Every season the weaponsmith and armorer bring three new pieces each, from +1 to +3. Heirlooms and specialists come and go with the seasons too. What you buy goes into your pack${full?'; <b>your pack is full</b>, so sell something to make room':''}.</p>
+      <div class="tally"><div>Gold<b>${H.gold}</b></div><div>Pack<b>${n} of ${cap}</b></div></div></div>`)}
+    ${F('wlpack',`Pack · ${n} of ${cap}`,'Room for 10 + Grit',`<p class="muted" style="font-size:15px;margin:0 0 10px">Equip an item on yourself or a companion in your band when it would serve them better than what they carry; whatever they wore goes back into the pack. Companions get an item’s roll bonuses, and only the boons that work for one person (reroll, turning aside a wound, faster mending, the salve-horn). Selling pays half the price.</p>${pack}`)}
+    <div class="two">${F('smith','Weaponsmith this season','',`<ul class="wares">${stock('weapon')}</ul>`)}${F('armorer','Armorer this season','',`<ul class="wares">${stock('armor')}</ul>`)}</div>
+    <div class="two">${F('heir','Heirlooms this season','',`<ul class="wares">${stock('heirloom')}</ul>`)}${F('spec','Specialists this season','',`<ul class="wares">${stock('specialty')}</ul>`)}</div>`;
+}
+document.addEventListener('click',e=>{const t=e.target.closest('button[data-wlbuy],button[data-wleq]');if(!t||!H)return;
+  if(t.dataset.wlbuy){const k=t.dataset.wlbuy.indexOf('|');wlBuy(t.dataset.wlbuy.slice(0,k),t.dataset.wlbuy.slice(k+1));return}
+  const i=+t.dataset.wleq,sel=document.getElementById('wleq-'+i);if(sel)wlEquip(i,sel.value)});
+
+/* the dead give back their gear: the hero, a spouse, or anyone of the household who falls; into the pack, or sold if it is full */
+function reclaimDead(){
+  const who=[];const me=heroOf();if(me&&me.dead)who.push(me);
+  (H.members||[]).forEach(m=>{if(m.dead&&m!==me)who.push(m)});
+  if(H.spouse&&H.spouse.dead)who.push(H.spouse);
+  who.forEach(m=>{if(!m.gear)return;['weapon','armor','heirloom','specialty'].forEach(k=>{const n=m.gear[k];if(!n||n==='None')return;
+    m.gear[k]=k==='weapon'||k==='armor'?'None':'';
+    if(H.armory.length<packCap()){H.armory.push({slot:k,name:n});H.log.push({cycle:H.cycle,text:`${m.given}’s ${n} goes back into your pack.`})}
+    else{const g=sellPrice(k,n);H.gold+=g;H.log.push({cycle:H.cycle,text:`No room in your pack for ${m.given}’s ${n}: sold for ${g} gold.`})}})});
+}
+
+/* companions and heirlooms/specialists: roll bonuses always count; of the boons, only those that work for one person */
+const COMP_BOONS=['marble','shield','surgeon','salve'];
+function compIdle(slot,n){if(slot==='weapon'||slot==='armor')return false;const i=itemInfo(slot,n)||{};
+  return !!i.boon&&!COMP_BOONS.includes(i.boon)&&!i.stat&&!i.op&&!i.wounds&&!i.fallGrit}
+function compImproves(c,slot,n){if(compIdle(slot,n))return false;
+  if(slot==='weapon'||slot==='armor')return improves(c,slot,n);
+  const i=itemInfo(slot,n)||{},cur=c.gear[slot];if(cur===n)return false;
+  const sc=x=>{if(!x||x==='None'||compIdle(slot,x))return 0;const j=itemInfo(slot,x)||{};return itemScore(c,slot,x)+(j.boon&&COMP_BOONS.includes(j.boon)?1:0)};
+  return sc(n)>sc(cur)||(!!i.boon&&COMP_BOONS.includes(i.boon)&&!hasBoon(c,i.boon))}
+
+/* ==========================================================================
+   LARK — courting a companion. Any adult, unwed companion of the other sex
+   whose age suits (the marriage age rule) can be courted; one at a time. Each
+   adventure they ride on with you adds a point; at 4 you may propose, and they
+   become your spouse with a boon of the blood. A house courtship can run
+   alongside; whichever weds first ends the other gracefully.
+   ========================================================================== */
+const CC_NEED=4;
+function spouseFrom(S){return S.house?`of House ${esc(S.house)}`:`once your ${esc((S.wasTitle||'companion').toLowerCase())}`}
+function canCourtComp(c){const me=heroOf();return !!(me&&!me.dead&&c&&c.id!=='sp'&&c.comp&&!isFamily(c)&&!c.dead&&!H.spouse&&c.sex!==me.sex&&isAdult(c)&&isAdult(me)&&ageOk(me.age,me.sp||'Kin',c.age,c.sp||'Kin'))}
+function ccourtLine(c){const C=H.ccourt;if(!C||C.id!==c.id)return '';
+  return `<p style="margin:8px 0 0;font-size:15px"><span class="status kin">Courting</span> <span class="muted">${C.pts>=CC_NEED?'You have ridden through enough together to propose.':`${C.pts} of ${CC_NEED} adventures together; each adventure ${c.sex==='m'?'he':'she'} rides on with you counts.`}</span></p>`}
+function ccourtBtns(c){const C=H.ccourt,busy=!!(H.adv&&H.adv.cur);
+  if(C&&C.id===c.id){if(C.pts>=CC_NEED&&wedAsk&&wedAsk.kind==='comp'&&wedAsk.id===c.id)return `<b style="align-self:center">Wed ${esc(c.given)} for life? This cannot be undone.</b><button class="main" data-wedask="yes" ${busy?'disabled':''}>Wed ${esc(c.given)}</button><button data-wedask="no">Not yet</button>`;
+    return `${C.pts>=CC_NEED?`<button class="main" data-ccourt="ask|${c.id}" ${busy?'disabled':''}>Propose to ${esc(c.given)}</button>`:''}<button data-ccourt="stop|${c.id}">Stop courting</button>`}
+  if(!C&&canCourtComp(c))return `<button data-ccourt="start|${c.id}">Court ${esc(c.given)}</button>`;
+  return ''}
+function ccWed(c){const me=heroOf();if(!H.ccourt||H.ccourt.id!==c.id||H.ccourt.pts<CC_NEED||H.spouse||(H.adv&&H.adv.cur))return;
+  const innate={...pick(BLOOD_BOONS.filter(b=>SPOUSE_BOONS.includes(b.boon)))};
+  const S={...c,wasTitle:c.title,house:'',innate,wed:H.cycle,place:'companion',dead:false};delete S.comp;delete S.merc;S.id='sp';
+  H.members=H.members.filter(x=>x!==c);H.spouse=S;H.ccourt=null;
+  const msgs=[`You wed ${c.given}, who rode at your side as your ${c.title.toLowerCase()}. ${c.sex==='m'?'He':'She'} rides on with you as your ${c.sex==='m'?'husband':'wife'}, for free, and brings a boon of the blood: ${innate.name}.`];
+  if(H.court){msgs.push(`Your courtship of ${H.court.suitor.given} of House ${H.court.house} ends gracefully. No offense is taken.`);H.adv.special=(H.adv.special||[]).filter(a=>!a.courtship);H.court=null}
+  H.suitors={};msgs.forEach(t=>H.log.push({cycle:H.cycle,text:t}));deed(`You wed ${c.given}, once your ${c.title.toLowerCase()}.`,'good');render()}
+document.addEventListener('click',e=>{const t=e.target.closest('button[data-ccourt],button[data-crelook]');if(!t||!H)return;
+  if(t.dataset.crelook){const c=compById(t.dataset.crelook);if(c){c.pic=choosePic(c,picOf(c).n);c.look=(Math.floor(Math.random()*4294967295)>>>0)||1}render();return}
+  const [k,id]=t.dataset.ccourt.split('|'),c=compById(id);if(!c)return;
+  if(k==='start'&&!H.ccourt&&canCourtComp(c)){H.ccourt={id:c.id,pts:0,since:H.cycle};H.log.push({cycle:H.cycle,text:`You begin to court ${c.given}.`});render()}
+  else if(k==='stop'&&H.ccourt&&H.ccourt.id===c.id){H.ccourt=null;H.log.push({cycle:H.cycle,text:`You stop courting ${c.given}. No offense is taken.`});render()}
+  else if(k==='ask'){wedAsk={kind:'comp',id:c.id};render()}});
+
+/* ==========================================================================
+   LARK — companions stored at your home: no upkeep, no training (queued
+   training waits), they mend and age; no limit; they keep their gear.
+   ========================================================================== */
+function storeComp(id){const c=compById(id);if(!c||c.id==='sp'||isFamily(c)||c.stored||(H.adv&&H.adv.cur))return;
+  c.stored=true;H.log.push({cycle:H.cycle,text:`${c.given} the ${c.title.toLowerCase()} stays at your home.`});
+  if(H.compWait&&bandRoom()>0){const w=H.compWait;H.compWait=null;w.id=H.nextId++;H.members.push(w);H.log.push({cycle:H.cycle,text:`${w.given} joins your band.`})}
+  render()}
+function unstoreComp(id){const c=compById(id);if(!c||!c.stored||bandRoom()<=0||(H.adv&&H.adv.cur))return;
+  delete c.stored;H.log.push({cycle:H.cycle,text:`${c.given} the ${c.title.toLowerCase()} rides with you again (upkeep ${c.comp.upkeep} gold a season).`});render()}
+function storedView(){const L=storedMembers();if(!L.length)return '';const busy=!!(H.adv&&H.adv.cur),full=bandRoom()<=0;
+  return `<section class="pane"><div class="boardhead"><h2>At your home · ${L.length}</h2><span class="muted" style="font-size:15px">No upkeep</span></div>
+    <p class="muted" style="margin:0 0 10px;font-size:16px">Companions at home cost nothing and keep their gear. They mend and grow older, but do not train; queued training waits until they ride again.${full?' Your band is full: make room to bring someone back.':''}</p>
+    <ul class="standing">${L.map(c=>`<li style="display:flex;gap:10px;align-items:center">${portrait(c,48)}<span style="flex:1;min-width:0"><b>${esc(c.given)}</b> <span class="muted">· ${esc(c.title)} · ${esc(c.sp)}, ${c.age}${c.wounds?` · ${c.wounds} of ${maxWounds(c)} wounds`:''}</span><br><span style="font-size:15px">${compStatsLine(c)}</span><br><span class="muted" style="font-size:14px">${['weapon','armor','heirloom','specialty'].map(k=>c.gear[k]).filter(x=>x&&x!=='None').map(esc).join(' · ')||'No gear'} · upkeep ${c.comp.upkeep} gold a season when riding</span></span>
+      <span class="acts" style="margin:0"><button class="sm" data-cunstore="${c.id}" ${busy||full?'disabled':''}>Ride with you</button><button class="sm danger" data-cdismiss="${c.id}" ${busy?'disabled':''}>Send away</button></span></li>`).join('')}</ul></section>`}
+document.addEventListener('click',e=>{const t=e.target.closest('button[data-cstore],button[data-cunstore]');if(!t||!H)return;
+  if(t.dataset.cstore)storeComp(t.dataset.cstore);else unstoreComp(t.dataset.cunstore)});
+
+/* a proposal waits for the player's yes */
+var wedAsk=null;
+document.addEventListener('click',e=>{const t=e.target.closest('button[data-wedask]');if(!t||!H)return;const v=t.dataset.wedask;
+  if(v==='suitor'){wedAsk={kind:'suitor'};render();return}
+  if(v==='no'){wedAsk=null;render();return}
+  if(v==='yes'&&wedAsk){const w=wedAsk;wedAsk=null;if(w.kind==='suitor')wedSuitor();else{const c=compById(w.id);if(c)ccWed(c);else render()}}});
 </script>
 
 </body></html>
