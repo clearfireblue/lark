@@ -810,6 +810,8 @@ function usedPics(ex){return new Set(G?[G.me,...(G.family||[]),...(G.family||[])
    To strip them from the page later, delete the GrimRealm PORTRAITS entries marked old (everything before the noble portraits). */
 const HIDE_OLD_PORTRAITS=true;
 function livePool(m){const p=picPool(m);if(!HIDE_OLD_PORTRAITS)return p;const nb=p.filter(x=>!x.old);return nb.length?nb:p}
+/* New portrait: step through every face for your folk and sex in turn. If someone else already wears the one you land on, they get a fresh face. */
+function repicMe(){const m=G.me,p=livePool(m);if(p.length<2)return;const i=p.findIndex(x=>x.n===m.pic),nx=p[(i+1)%p.length].n;m.pic=nx;const others=[...(G.family||[]),...(G.family||[]).map(x=>x.spouse),...G.suitors,...G.suitors.map(x=>x.rival)].filter(x=>x&&x!==m&&x.pic===nx);others.forEach(o=>givePic(o,nx))}
 function givePic(m,avoid){const p=livePool(m),u=usedPics(m);let c=p.filter(x=>x.n!==avoid&&!u.has(x.n));if(!c.length)c=p.filter(x=>x.n!==avoid);if(!c.length)c=p;m.pic=pick(c).n}
 function picRec(m){let x=PORTRAITS.find(q=>q.n===m.pic);if(!x||x.sp!==m.sp||!livePool(m).includes(x)){givePic(m);x=PORTRAITS.find(q=>q.n===m.pic)}return x}
 /* tall (3:4) court portraits show whole where a frame allows it, and crop to head and shoulders in small square spots */
@@ -1354,7 +1356,7 @@ document.addEventListener('click',e=>{const t=e.target.closest('button');if(!t)r
     case 'noNew':confirmNew=false;render();break;
     case 'reroll':G.me.st=rollStats(G.me.sp);save();render();break;
     case 'rehouse':setStanding(rollTrack(G.me.sp));save();render();break;
-    case 'repic':givePic(G.me,G.me.pic);save();render();break;
+    case 'repic':repicMe();save();render();break;
     case 'more':moreFaces();break;
     case 'jump':jumpToHeir();break;
     case 'propose':{const x=suitor(G.sel);if(x&&!elderBlock(x))propose(x);break}
