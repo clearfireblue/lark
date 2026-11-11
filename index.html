@@ -1119,7 +1119,7 @@ function statBlock(st,me){return `<div class="stats">${STATS.map(k=>{let p='';fo
     (me?`<div class="help" style="display:flex;gap:10px;align-items:center;justify-content:space-between"><span>${STAT_HELP[k]}</span><span class="adj"><button class="sm" data-st="${k}" data-dv="-1" aria-label="Lower ${k}">−</button><button class="sm" data-st="${k}" data-dv="1" aria-label="Raise ${k}">+</button></span></div>`:'')}).join('')}</div>`}
 const spLine=m=>`${SPECIES[m.sp].name}, ${m.kage} in Kin years${m.sp!=='Kin'?` <span class="muted">(${spAgeOf(m)} as the ${SPECIES[m.sp].name} count)</span>`:''}`;
 
-function renderMe(){const m=G.me;$('mecard').innerHTML=`${portrait(m,56)}<div><b>${esc(m.name)} ${esc(m.house)}</b><span>${SPECIES[m.sp].name} · ${POWER[myPower()].n} · ${G.me.spouse?`wed to ${esc(G.me.spouse.name)}`:`seeking ${m.interest==='m'?'men':m.interest==='f'?'women':'anyone'}`}</span></div>`}
+function renderMe(){const m=G.me;$('mecard').innerHTML=`${portrait(m,56)}<div><b>${esc(m.name)} ${esc(m.house)}</b></div>`}
 
 function renderNav(){const items=[['you','You'],['suitors','Suitors']];if(G.date)items.push(['date','The Date']);items.push(['house','Your House'],['court','The Court']);items.push(['chronicle','Chronicle'],['rules','How it works']);
   $('sect').innerHTML=items.map(([k,l])=>`<button data-view="${k}" ${view===k?'aria-current="page"':''}>${l}${k==='date'?'<span class="live">in progress</span>':''}</button>`).join('')}
