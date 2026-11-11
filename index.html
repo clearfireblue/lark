@@ -260,13 +260,167 @@ const houseSp=n=>SPECIES_KEYS.find(k=>HOUSES_BY[k].includes(n));
 /* ---------- Phase 6a: the great houses ----------
    A dozen houses are rolled with each new game and last across the generations: suitors, rivals and drunken lords all come from them.
    Each has a power (its track: weak 14 or less, middling 15–16, strong 17–18) that drifts over the years, and an opinion of your house (−5 to +5). */
-const HOUSE_MIX=['Kin','Kin','Kin','Fey','Fey','Fey','Fur','Fur','Pel','Pel'];
+/* Phase 7a: a pool of eighteen houses (every monster folk among them); twelve come to court each year */
+const HOUSE_MIX=['Kin','Kin','Kin','Kin','Fey','Fey','Fey','Fey','Fur','Fur','Fur','Pel','Pel','Pel'],COURT_SEATS=12;
 const OP_MIN=-5,OP_MAX=5,STANDING_MAX=18;
 function newHouse(sp,taken,seats){const free=HOUSES_BY[sp].filter(n=>!taken.has(n)),nm=free.length?pick(free):pick(HOUSES_BY[sp]);taken.add(nm);
   seats=seats||new Set();const fs=SEATS_BY[sp].filter(x=>!seats.has(x)),seat=fs.length?pick(fs):pick(SEATS_BY[sp]);seats.add(seat);
   return {name:nm,sp,seat,words:pick(WORDS_BY[sp]),track:rollTrack(sp),op:ri(-2,2),ties:0}}
+/* ---------- Phase 7b: realm events ----------
+   About once a year (a 25% roll each season) an event strikes. 60% fall on one house (yours among the candidates);
+   40% are widespread, and each house (yours too) has a one-in-three chance of being caught, the rest spared.
+   Good or bad at even odds; ±1, or ±2 one time in seven. Another house's power shifts for good; your own house gains or loses whole points of lasting standing.
+   Good fortune warms a marriage: a house bound to yours that prospers, or prospers with you, gains +1 opinion of your house.
+   Each year with two or more strong houses, a 60% chance of a struggle for the top: the highest (ties by chance) holds, every other strong house falls 3–5. */
+const REALM_ODDS=1,CHOICE_SHARE=1/3,WIDE_SHARE=.4,WIDE_HIT=1/3,BIG_ODDS=1/7,CLASH_ODDS=.2;
+const CLASH_WHY=['war breaks out among the great houses','an assassin’s blade finds its mark','calamity strikes at the worst possible hour','a ruinous feud is fought out in the king’s own hall','a charge of treason is laid before the throne','a rival’s gold buys the council'];
+/* the struggle for the top: when your house is strong, it is drawn in as a summons (Phase 7c) */
+function topClash(news,quiet){const top=(G.houses||[]).filter(h=>powerOf(h)==='strong');
+  if(!quiet&&top.length&&myPower()==='strong'&&canSummon()&&!(G.summons||[]).some(s=>s.kind==='clash')){if(R()>=CLASH_ODDS)return;const names=top.map(h=>h.name),hold=(l,st)=>({l,st,win:{clash:'win',rivals:names},fail:{clash:'lose',rivals:names}});
+    G.summons=(G.summons||[]).concat([{kind:'clash',title:'A struggle for the first place in the realm',text:`${cap(pick(CLASH_WHY))}. ${top.map(HN).join(', ')} ${top.length===1?'contends':'contend'} with your house for the top. Hold your place, or fall.`,
+      opts:[hold('Hold it by the sword','Might'),hold('Hold it with your coffers','Ability'),hold('Hold it by intrigue','Insight')],stay:{l:'Yield gracefully',eff:{clash:'yield',rivals:names}}}]);
+    news.push({c:'warn',fam:1,t:`<b>A struggle for the first place in the realm.</b> Your house is drawn in. Answer on Your House this season.`});return}
+  if(top.length<2||R()>=CLASH_ODDS)return;
+  const win=shuffle(top).sort((a,b)=>b.track-a.track)[0],t=[];
+  top.filter(h=>h!==win).forEach(h=>{const was=h.track;shiftPower(h,-ri(1,2));t.push(`House ${esc(h.name)} falls from ${was} to ${h.track}, and is now a ${POWER[powerOf(h)].n.toLowerCase()}`)});
+  if(!quiet)news.push({c:'warn',t:`<b>A struggle for the first place in the realm.</b> ${cap(pick(CLASH_WHY))}. House ${esc(win.name)} holds the top. ${t.join('; ')}.`})}
+const EV_ONE={good:[['A bumper harvest fills the granaries of {H} to bursting.','Miners strike a new seam of silver in the hills of {H}.','The crown grants {H} a charter for a great market fair.','A champion of {H} carries the summer tourney, and the purses with it.','Trade galleys crowd the harbours of {H}, heavy with custom.'],
+    ['Gold! A great vein is found beneath the lands of {H}.','The king names a lord of {H} to his small council.']],
+  bad:[['Blight rots the fields of {H}.','Fire guts the granaries of {H}.','Bandits harry the roads of {H} all season, and the tolls dry up.','A mine of {H} floods, and is lost with many miners.','An heir of {H} is disgraced in a scandal at court.'],
+    ['The crown seizes lands of {H} over unpaid levies.','The vassals of {H} rise in rebellion, put down only at ruinous cost.']]};
+const EV_WIDE={good:[['A golden summer: across the realm, many houses bring in a rich harvest.','New roads open trade across the realm, and some markets swell.','A warm spring: the herds of many houses calve twice over.'],
+    ['Peace and plenty: some houses see their richest year in living memory.']],
+  bad:[['Famine grips the realm, and some houses go hungry.','The great rivers burst their banks and drown the fields of many houses.','Raiders burn villages up and down the realm.'],
+    ['Plague sweeps the realm, and the dead are carted out by night.']]};
+const powerRange=h=>MONSTER_KEYS.includes(h.sp)?[9,STANDING_MAX]:[12,STANDING_MAX];
+function shiftPower(h,dv){const was=powerOf(h),[a,b]=powerRange(h),t0=h.track;h.track=clamp(h.track+dv,a,b);
+  return h.track===t0?'':powerOf(h)!==was?` House ${esc(h.name)} is now a ${POWER[powerOf(h)].n.toLowerCase()}.`:''}
+/* your house's lasting standing never falls below the floor the other great houses share: 12, or 9 for a house of the monster folk (by its founder's folk) */
+const myFloor=()=>MONSTER_KEYS.includes(((G.family&&G.family[0])||G.me).sp)?9:12;
+function shiftMyStanding(dv){const was=myPower(),b0=baseStanding();G.baseStanding=clamp(b0+dv,Math.min(b0,myFloor()),STANDING_MAX);
+  while((G.boosts||[]).length&&G.baseStanding+G.boosts.length>STANDING_MAX)G.boosts.shift();syncStanding();const d=G.baseStanding-b0;
+  return d?` House ${esc(G.me.house)}’s lasting standing ${d>0?'rises':'falls'} to ${baseStanding()}${powerNote(was)}.`:` House ${esc(G.me.house)}’s standing holds at ${baseStanding()}.`}
+function realmEvent(news,quiet){if(!G.houses||R()>=REALM_ODDS)return;if(!quiet&&canSummon()&&R()<CHOICE_SHARE&&makeSummons(news))return;
+  const good=R()<.5,big=R()<BIG_ODDS?1:0,dv=(good?1:-1)*(big?2:1),c=good?'good':'bad',warm=[];
+  const bond=h=>{if(good&&h.ties){h.op=clamp(h.op+1,OP_MIN,OP_MAX);warm.push(h)}};
+  if(R()<WIDE_SHARE){const hs=G.houses.filter(()=>R()<WIDE_HIT),mine=R()<WIDE_HIT;
+    let t=pick(EV_WIDE[good?'good':'bad'][big]);hs.forEach(h=>{t+=shiftPower(h,dv);bond(h)});
+    if(mine){t+=shiftMyStanding(dv);if(good)G.houses.filter(h=>h.ties&&!warm.includes(h)).forEach(bond)}
+    if(warm.length)t+=` ${warm.map(h=>'House '+esc(h.name)).join(', ')}, bound to yours by marriage, ${warm.length===1?'shares':'share'} in the good fortune (opinion +1).`;
+    const hit=hs.map(h=>'House '+esc(h.name)).concat(mine?[`your own House ${esc(G.me.house)}`]:[]);
+    if(!quiet||mine)news.push({c,fam:mine?1:0,t:`<b>${good?'Good fortune':'Hard times'}.</b> ${t} <span class="muted">${hit.length?`Touched: ${hit.join(', ')}. The rest are spared.`:'Every great house is spared.'}</span>`});return}
+  const pickN=ri(0,G.houses.length);
+  if(pickN===G.houses.length){let t=pick(EV_ONE[good?'good':'bad'][big]).replace('{H}',`House ${esc(G.me.house)}`)+shiftMyStanding(dv);
+    if(good){G.houses.filter(h=>h.ties).forEach(bond);if(warm.length)t+=` ${warm.map(h=>'House '+esc(h.name)).join(', ')}, bound to yours by marriage, ${warm.length===1?'is':'are'} glad of it (opinion +1).`}
+    news.push({c,fam:1,t:`<b>${good?'Good fortune':'Hard times'} for your house.</b> ${t}`});return}
+  const h=G.houses[pickN];let t=pick(EV_ONE[good?'good':'bad'][big]).replace('{H}',`House ${esc(h.name)}`)+shiftPower(h,dv);bond(h);
+  if(warm.length)t+=` Bound to yours by marriage, House ${esc(h.name)} shares its fortune with kin (opinion +1).`;
+  if(!quiet)news.push({c:good?'':'warn',t:`<b>${good?'Good fortune':'Hard times'}.</b> ${t}`})}
+/* ---------- Phase 7c: summons, events with choices ----------
+   One season in three, the realm's event is a summons instead: it waits on Your House for the season. Answering with a roll uses a date;
+   a success gains standing or opinion, a failure costs only the date. Staying out (or letting the season end) may cool the houses involved.
+   Some answers need no roll but cost lasting standing (opening your granaries, taking in the sick). */
+const HN=h=>`House ${esc(h.name)}`;
+const courtHs=()=>(G.houses||[]).filter(h=>h.court!==false);
+const canSummon=()=>!!G.me&&!G.me.dead&&ofAge(G.me)&&!G.me.auto&&!stuck();
+const canActSum=()=>datesLeft()>0&&!G.date&&!G.me.auto&&ofAge(G.me);
+/* summons reward the favour of houses, not standing. Answers with no roll always succeed, but cost a point of lasting standing */
+const topCourt=n=>courtHs().slice().sort((a,b)=>b.track-a.track).slice(0,n);
+const SUMMONS={
+  levy(){const cs=shuffle(courtHs());if(cs.length<3)return null;const reb=cs[0],m=cs.slice(1,3);
+    return {title:'The crown calls the banners',text:`${HN(reb)} rises in revolt, and the king summons his lords. ${m.map(HN).join(' and ')} already march.`,
+      opts:[{l:'Ride with the levy',st:'Might',win:{op:m.map(h=>[h.name,1])}},{l:'Send grain and coin to the host',st:'Ability',win:{op:m.map(h=>[h.name,1])}},
+        {l:`Talk ${HN(reb)} into surrender`,st:'Insight',win:{op:[[reb.name,2]]}},{l:'Hire a company of sellswords for the host',win:{stand:-1,op:m.map(h=>[h.name,2])}}],
+      stay:{l:'Pay scutage and stay home',eff:{op:m.map(h=>[h.name,-1])}}}},
+  border(){const cs=shuffle(courtHs());if(cs.length<2)return null;const [a,b]=cs;
+    return {title:'War on the borders',text:`${HN(a)} and ${HN(b)} come to blows over a border, and both send riders to ask for your sword.`,
+      opts:[{l:`Ride for ${HN(a)}`,st:'Might',win:{op:[[a.name,2],[b.name,-1]]}},{l:`Ride for ${HN(b)}`,st:'Might',win:{op:[[b.name,2],[a.name,-1]]}},
+        {l:'Broker a truce',st:'Insight',win:{op:[[a.name,1],[b.name,1]]}},{l:'Ransom the captives of both sides',win:{stand:-1,op:[[a.name,1],[b.name,1]]}}],
+      stay:{l:'Stay neutral',eff:{op:[[a.name,-1],[b.name,-1]]}}}},
+  ally(news){const cs=shuffle((G.houses||[]).filter(h=>h.ties||h.op>=1));if(!cs.length)return null;const x=cs[0];
+    news.push({c:'warn',t:`<b>Hard times.</b> ${pick(EV_ONE.bad[0]).replace('{H}',HN(x))}${shiftPower(x,-1)}`});
+    return {title:`${HN(x)} asks for aid`,text:`In its trouble, ${HN(x)} sends to you for help.`,
+      opts:[{l:'Send aid',st:'Ability',win:{op:[[x.name,2]]}},{l:'Plead their cause at court',st:'Insight',win:{op:[[x.name,2]]}},{l:'Pledge your own lands as their surety',win:{stand:-1,op:[[x.name,3]]}}],
+      stay:{l:'Refuse',eff:{op:[[x.name,-1]]}}}},
+  famine(news){const S=(G.houses||[]).filter(()=>R()<WIDE_HIT);if(!S.length)return null;let w='Famine grips the realm.';S.forEach(h=>w+=shiftPower(h,-1));
+    news.push({c:'warn',t:`<b>Hard times.</b> ${w} <span class="muted">Stricken: ${S.map(HN).join(', ')}.</span>`});
+    return {title:'Famine',text:`Famine has struck ${S.map(HN).join(', ')}. Your own granaries are full.`,
+      opts:[{l:'Sell grain at a fair price',st:'Ability',win:{op:S.map(h=>[h.name,1])}},{l:'Open your granaries',win:{stand:-1,op:S.map(h=>[h.name,2])}}],
+      stay:{l:'Keep your stores',eff:{op:S.map(h=>[h.name,-1])}}}},
+  plague(news){const S=(G.houses||[]).filter(()=>R()<WIDE_HIT);if(!S.length)return null;let w='Plague sweeps the realm.';S.forEach(h=>w+=shiftPower(h,-1));
+    news.push({c:'warn',t:`<b>Hard times.</b> ${w} <span class="muted">Stricken: ${S.map(HN).join(', ')}.</span>`});
+    return {title:'Plague',text:`Plague has struck ${S.map(HN).join(', ')}. Your lands are spared, so far.`,
+      opts:[{l:'Send your physicians',st:'Insight',win:{op:S.map(h=>[h.name,1])}},{l:'Take in the sick',win:{stand:-1,op:S.map(h=>[h.name,2])}}],
+      stay:{l:'Close your gates',eff:{}}}},
+  succession(){const x=pick(courtHs());if(!x)return null;
+    return {title:`A disputed succession in ${HN(x)}`,text:`The lord of ${HN(x)} dies with two heirs at each other’s throats, and both seek your backing.`,
+      opts:[{l:'Back the elder at court',st:'Insight',win:{op:[[x.name,2]]}},{l:'Back the younger with steel',st:'Might',win:{op:[[x.name,2]]}},{l:'Host both heirs at your hall until it is settled',win:{stand:-1,op:[[x.name,2]]}}],
+      stay:{l:'Keep out of it',eff:{op:[[x.name,-1]]}}}},
+  tourney(){const g=shuffle(courtHs()).slice(0,3);if(g.length<2)return null;const two=g.slice(0,2);
+    return {title:'The king’s tourney',text:`The king proclaims a great tourney, and every house is to send a champion. ${g.map(HN).join(', ')} lead the field.`,
+      opts:[{l:'Ride in the lists',st:'Might',win:{op:two.map(h=>[h.name,1])}},{l:'Host the riders’ feast',st:'Ability',win:{op:two.map(h=>[h.name,1])}},{l:'Charm the royal box',st:'Insight',win:{op:two.map(h=>[h.name,1])}},
+        {l:'Put up the prize purse',win:{stand:-1,op:g.map(h=>[h.name,1])}}],stay:{l:'Send no one',eff:{}}}},
+  bandits(){const x=pick(courtHs());if(!x)return null;
+    return {title:'A bandit lord',text:`A bandit lord holds the roads by ${HN(x)}, and its lord asks who will help clear them.`,
+      opts:[{l:'Hunt them down',st:'Might',win:{op:[[x.name,2]]}},{l:'Buy them off',st:'Ability',win:{op:[[x.name,1]]}},{l:'Garrison the roads at your own expense',win:{stand:-1,op:[[x.name,2]]}}],
+      stay:{l:'Leave it to them',eff:{op:[[x.name,-1]]}}}},
+  audit(){const c=topCourt(2);if(c.length<2)return null;
+    return {title:'The crown’s auditors',text:`The king’s auditors ride out to count every house’s levies and rents. ${c.map(HN).join(' and ')}, who sit on the council, will hear their report.`,
+      opts:[{l:'Put the books in order',st:'Ability',win:{op:c.map(h=>[h.name,1])}},{l:'Win over the auditors',st:'Insight',win:{op:c.map(h=>[h.name,1])}},{l:'Sit with them through every ledger',st:'Grit',win:{op:c.map(h=>[h.name,1])}}],
+      stay:{l:'Let them find what they find',eff:{}}}},
+  feud(){const cs=shuffle(courtHs());if(cs.length<2)return null;const [a,b]=cs;
+    return {title:'A feud at court',text:`${HN(a)} and ${HN(b)} trade insults at the high table, and swords are half drawn.`,
+      opts:[{l:'Mediate between them',st:'Insight',win:{op:[[a.name,1],[b.name,1]]}},{l:`Stand with ${HN(a)}`,st:'Might',win:{op:[[a.name,2],[b.name,-1]]}},{l:`Stand with ${HN(b)}`,st:'Might',win:{op:[[b.name,2],[a.name,-1]]}},
+        {l:'Host a reconciliation feast',win:{stand:-1,op:[[a.name,2],[b.name,2]]}}],stay:{l:'Let them settle it',eff:{}}}},
+  embassy(){const t=shuffle(courtHs()).slice(0,2);if(t.length<2)return null;
+    return {title:'An embassy over the sea',text:`The king seeks a lord to lead an embassy to the courts across the sea. ${t.map(HN).join(' and ')} hope for new trade from it.`,
+      opts:[{l:'Lead the embassy',st:'Insight',win:{op:t.map(h=>[h.name,1])}},{l:'Endure the long voyage',st:'Grit',win:{op:t.map(h=>[h.name,1])}}],stay:{l:'Decline',eff:{}}}}
+};
+function makeSummons(news){for(const k of shuffle(Object.keys(SUMMONS))){const S=SUMMONS[k](news);if(S){S.kind=k;(G.summons=G.summons||[]).push(S);
+  news.push({c:'warn',fam:1,t:`<b>A summons for House ${esc(G.me.house)}:</b> ${S.title}. Answer it on Your House this season.`});return true}}return false}
+function effText(e){if(!e)return '';const p=[],op=e.op||[];if(e.stand)p.push(`${e.stand>0?'+':'−'}${Math.abs(e.stand)} lasting standing`);
+  if(op.length>2&&op.every(x=>x[1]===op[0][1]))p.push(`${opSign(op[0][1])} opinion with ${op.length} houses`);else op.forEach(([n,dv])=>p.push(`${opSign(dv)} opinion with House ${esc(n)}`));
+  if(e.clash)p.push(e.clash==='win'?'your house holds the top, and every rival falls 1–2':e.clash==='lose'?'your lasting standing falls 1–2':'your lasting standing falls 1');
+  return p.length?cap(p.join(', '))+'.':''}
+function applyEff(e,lines){if(!e)return;if(e.stand)lines.push(shiftMyStanding(e.stand).trim());
+  (e.op||[]).forEach(([n,dv])=>{const h=shiftOp(n,dv);if(h)lines.push(`House ${esc(n)} thinks ${dv>0?'better':'less'} of yours (${opWord(h.op).toLowerCase()}, ${opSign(h.op)}).`)});
+  if(e.clash)clashFor(e.clash,e.rivals,lines)}
+/* your house in the struggle for the top: win and every rival falls; lose or yield and your house falls, while the rivals fight it out */
+function clashFor(mode,names,lines){const rv=(names||[]).map(houseOf).filter(h=>h&&powerOf(h)==='strong');
+  const fall=h=>{const was=h.track;shiftPower(h,-ri(1,2));lines.push(`House ${esc(h.name)} falls from ${was} to ${h.track}.`)};
+  if(mode==='win'){lines.push(`House ${esc(G.me.house)} holds the top.`);rv.forEach(fall);return}
+  lines.push(mode==='yield'?'Your house yields the field.':'Your house is beaten.');lines.push(shiftMyStanding(mode==='yield'?-1:-ri(1,2)).trim());
+  if(rv.length>1){const w=shuffle(rv).sort((a,b)=>b.track-a.track)[0];lines.push(`House ${esc(w.name)} holds the top.`);rv.filter(h=>h!==w).forEach(fall)}
+  else if(rv[0])lines.push(`House ${esc(rv[0].name)} holds the top.`)}
+function answerSummons(i,so){const S=(G.summons||[])[i];if(!S||G.date)return;const lines=[];let ok=true,head;
+  if(so==='stay'){applyEff(S.stay.eff,lines);head=`${S.stay.l}.`}
+  else{const o=S.opts[+so];if(!o)return;
+    if(o.st){if(!canActSum())return;useDate();G.me.locked=true;const roll=ri(1,10),target=G.me.st[o.st];ok=roll===1||(roll!==10&&roll<=target);
+      head=`${o.l}: d10 rolled ${roll} against ${o.st} ${target}. ${ok?'Success.':o.fail?'It goes against you.':'It comes to nothing, and the date is spent.'}`;applyEff(ok?o.win:o.fail,lines)}
+    else{head=`${o.l}.`;applyEff(o.win,lines)}}
+  G.summons.splice(i,1);const txt=`${head} ${lines.join(' ')}`;G.lastSum={ok,txt:`<b>${S.title}.</b> ${txt}`};
+  G.log=[{title:`${seasonName()}: ${S.title}`,news:[{c:ok?'good':'bad',fam:1,t:txt}]}].concat(G.log||[]).slice(0,30);save();render()}
+/* at each season's end, summons left unanswered take their stay-out result */
+function expireSummons(news){const old=G.summons||[];G.summons=[];G.lastSum=null;
+  old.forEach(S=>{const lines=[];applyEff(S.stay.eff,lines);news.push({c:'warn',fam:1,t:`<b>Unanswered: ${S.title}.</b> ${S.stay.l}. ${lines.join(' ')}`})})}
+function summonsPanel(){const L=G.summons||[],can=canActSum();if(!L.length&&!G.lastSum)return '';
+  return `<h3>Summons</h3>${L.map((S,i)=>`<div class="evbox"><b>${S.title}</b>${S.text}<div class="opts" style="margin-top:8px">${S.opts.map((o,j)=>`<button class="opt ev" data-sum="${i}" data-so="${j}" ${o.st&&!can?'disabled':''}><span class="ap">${o.l}<span>${o.st?`${o.st} ${G.me.st[o.st]}`:'No roll'}</span></span><span class="hint">${o.st?'Uses a date. On a success: ':''}${effText(o.win)}${o.fail?` On a failure: ${effText(o.fail)}`:o.st?' A failure costs only the date.':''}</span></button>`).join('')}<button class="opt" data-sum="${i}" data-so="stay"><span class="ap">${S.stay.l}<span>Free</span></span><span class="hint">${effText(S.stay.eff)||'Nothing changes.'} This is what happens if the season ends unanswered.</span></button></div></div>`).join('')}
+  ${L.length&&!can?`<p class="muted" style="font-size:15px;margin:6px 0 0">${G.me.auto?esc(G.me.name)+' is on auto-run.':!ofAge(G.me)?esc(G.me.name)+' is not yet of age.':G.date?'Finish your date first.':'No dates left this season.'} Answers that need a roll must wait.</p>`:''}
+  ${G.lastSum?`<p class="rolled ${G.lastSum.ok?'hit':'miss'}">${G.lastSum.txt}</p>`:''}`}
 function rollHouses(exclude){const taken=new Set([exclude]),seats=new Set(),out=[];
-  HOUSE_MIX.concat(shuffle(MONSTER_KEYS).slice(0,2)).forEach(sp=>out.push(newHouse(sp,taken,seats)));return out}
+  HOUSE_MIX.concat(MONSTER_KEYS).forEach(sp=>out.push(newHouse(sp,taken,seats)));return out}
+/* each year: every strong and middling house comes to court; the weak are drawn for the seats left, up to twelve.
+   A weak house sitting out is not ruined, only not grand enough for this year's galas. At least one monster house is always at court. */
+function seatCourt(news){const hs=G.houses||[];if(!hs.length)return;const was=new Map(hs.map(h=>[h.name,h.court]));
+  const sure=hs.filter(h=>powerOf(h)!=='weak'),weak=shuffle(hs.filter(h=>powerOf(h)==='weak'));let take=weak.slice(0,Math.max(0,COURT_SEATS-sure.length));
+  /* one of the weak houses at court is always a monster house (squeezed in as an extra seat if no weak seats are left) */
+  if(!take.some(h=>MONSTER_KEYS.includes(h.sp))){const m=weak.find(h=>MONSTER_KEYS.includes(h.sp));if(m){if(take.length)take[take.length-1]=m;else take=[m]}}
+  const on=new Set(sure.concat(take));hs.forEach(h=>h.court=on.has(h));
+  if(news){const came=hs.filter(h=>h.court&&was.get(h.name)===false),went=hs.filter(h=>!h.court&&was.get(h.name)!==false),L=a=>a.map(h=>'House '+esc(h.name)).join(', ');
+    if(came.length||went.length)news.push({c:'',t:`This year’s galas: ${came.length?`${L(came)} come${came.length===1?'s':''} to court`:''}${came.length&&went.length?'; ':''}${went.length?`${L(went)} stay${went.length===1?'s':''} home`:''}.`})}}
+/* older saves: fill the pool out to eighteen, then seat the court */
+function migratePool(){if(!G.houses||G.poolV)return;const taken=new Set([G.me.house,...G.houses.map(h=>h.name)]),seats=new Set(G.houses.map(h=>h.seat)),need=HOUSE_MIX.concat(MONSTER_KEYS);
+  G.houses.forEach(h=>{const i=need.indexOf(h.sp);if(i>=0)need.splice(i,1)});need.forEach(sp=>G.houses.push(newHouse(sp,taken,seats)));G.poolV=1;seatCourt()}
 const houseOf=n=>(G&&G.houses||[]).find(h=>h.name===n);
 const opWord=v=>v>=3?'Friendly':v>=1?'Warm':v<=-3?'Hostile':v<=-1?'Cool':'Neutral';
 const opSign=v=>(v>0?'+':v<0?'−':'')+Math.abs(v);
@@ -276,7 +430,7 @@ const opAff=s=>{const h=houseOf(s.house);return h?clamp(Math.trunc(h.op/2),-2,2)
 const startAff=s=>clamp(ri(0,2)+opAff(s),0,4);
 /* suitors come from the houses: folk weighted as before, split evenly among each folk's houses */
 const SEX_W=sex=>({Kin:3,Fey:2,Fur:2,Pel:sex==='m'?2:.7,Goblin:.25,Ratfolk:.25,Dhampir:.25,Succubus:sex==='f'?.25:0});
-function pickHouse(sex,exclude){exclude=exclude||[];const w=SEX_W(sex),hs=(G&&G.houses||[]).filter(h=>!exclude.includes(h.name)&&w[h.sp]>0);if(!hs.length)return null;
+function pickHouse(sex,exclude){exclude=exclude||[];const w=SEX_W(sex),hs=(G&&G.houses||[]).filter(h=>!exclude.includes(h.name)&&w[h.sp]>0&&h.court!==false);if(!hs.length)return null;
   const cnt={};hs.forEach(h=>cnt[h.sp]=(cnt[h.sp]||0)+1);const wt=h=>w[h.sp]/cnt[h.sp];let r=R()*hs.reduce((a,h)=>a+wt(h),0);
   for(const h of hs){r-=wt(h);if(r<=0)return h}return hs[hs.length-1]}
 /* your house's standing is shared by the whole family; deeds and marriages build progress toward the next point */
@@ -317,7 +471,8 @@ function allyWith(n,news){const h=houseOf(n);if(!h)return;h.ties=(h.ties||0)+1;s
   if(news)news.push({c:'good',fam:1,t:`The match binds House ${esc(n)} to yours: ${opWord(h.op).toLowerCase()} (${opSign(h.op)}), and your house gains ${st} standing progress.`});addProgress(st,news)}
 /* each year: a house's power may drift a step, and its opinion eases back toward neutral (or toward +2 for a house bound by marriage) */
 function housesYear(news,quiet){(G.houses||[]).forEach(h=>{const was=powerOf(h);
-  if(R()<.3)h.track=clamp(h.track+(R()<.5?1:-1),MONSTER_KEYS.includes(h.sp)?9:12,STANDING_MAX);
+  /* balance A: half the houses drift a step each year, and four times in five toward the middle (15; 14 for the monster folk) */
+  if(R()<.5){const mid=MONSTER_KEYS.includes(h.sp)?14:15,tw=h.track<mid?1:h.track>mid?-1:(R()<.5?1:-1);h.track=clamp(h.track+(R()<.8?tw:-tw),MONSTER_KEYS.includes(h.sp)?9:12,STANDING_MAX)}
   const rest=h.ties?2:0;if(h.op!==rest&&R()<.5)h.op+=h.op>rest?-1:1;
   if(!quiet&&powerOf(h)!==was)news.push({c:'warn',t:`House ${esc(h.name)} ${RANKS[powerOf(h)]>RANKS[was]?'rises':'falls'}, and is now a ${POWER[powerOf(h)].n.toLowerCase()}.`})})}
 /* older saves: build the houses from the suitors, rivals and spouses already in play, then fill to twelve */
@@ -742,7 +897,7 @@ function birthCheck(news){
     const yearly=clamp(birthOdds(mother,kids.length)+.02*Math.max(0,w),0,.95),p=1-Math.pow(1-yearly,1/4);
     if(R()<p){const c=makeChild(a,b,w);c.bornT=tIndex();news.push({c:'good',fam:1,t:`${esc(mother.name)} and ${esc(mother===a?b.name:a.name)} welcome a ${c.sex==='m'?'son':'daughter'}, ${esc(c.name)} (${SPECIES[c.sp].name}).`})}})}
 /* each year: everyone ages and the old may die */
-function yearTurn(news,quiet){housesYear(news,quiet);
+function yearTurn(news,quiet){housesYear(news,quiet);topClash(news,quiet);seatCourt(quiet?null:news);
   const everyone=[...alive(),...alive().map(m=>m.spouse).filter(x=>x&&!x.dead)];
   everyone.forEach(m=>{const was=m.kage;ageUp(m);
     if(G.family.includes(m)&&was<OF_AGE&&m.kage>=OF_AGE){givePic(m);news.push({c:'good',fam:1,t:`${esc(m.name)} comes of age, and may now go courting.`})}
@@ -752,16 +907,23 @@ function yearTurn(news,quiet){housesYear(news,quiet);
   if(G.me.dead){const next=alive().filter(ofAge).find(m=>!m.spouse)||alive().find(ofAge)||alive()[0];
     if(next){const was=G.me;switchTo(next);news.push({c:'warn',fam:1,t:`With ${esc(was.name)} gone, ${esc(next.name)} carries on for House ${esc(next.house)}.`})}}}
 /* the next child to come of age, and how many years until then */
-function nextHeir(){const kids=alive().filter(m=>m.kage<OF_AGE);if(!kids.length)return null;
-  /* folk mature at different rates, so the soonest to come of age is not always the eldest */
-  return kids.map(c=>{let yrs=0,y=yrsOf(c);while(Math.round(kinAge(y,c.sp))<OF_AGE&&yrs<80){y++;yrs++}return {c,yrs}}).sort((a,b)=>a.yrs-b.yrs)[0]}
+/* years until a child comes of age: folk mature at different rates, so the soonest to come of age is not always the eldest */
+function yrsToAge(c){let yrs=0,y=yrsOf(c);while(Math.round(kinAge(y,c.sp))<OF_AGE&&yrs<80){y++;yrs++}return yrs}
+/* the children in the order they will come of age (ties: the elder in Kin years first) */
+const ageQueue=()=>alive().filter(m=>m.kage<OF_AGE).map(c=>({c,yrs:yrsToAge(c)})).sort((a,b)=>a.yrs-b.yrs||b.c.kage-a.c.kage);
+function nextHeir(){return ageQueue()[0]||null}
 function jumpToHeir(){const h=nextHeir();if(!h||G.date)return;const start=seasonName({y:G.time.y,s:G.time.s});const news=[];
-  for(let i=0;i<h.yrs;i++){for(let q=0;q<4;q++){G.time.s=q;autoAll(news,true);birthCheck(news)}yearTurn(news,true);G.time.y++}
+  /* run year by year and stop at the first child of the house to come of age: a child born during the skip, of a faster-maturing folk
+     (Fur, Goblin, Ratfolk and so on), may come of age before the one who was next in line when the skip began */
+  let first=null;expireSummons(news);
+  for(let i=0;i<200&&!first;i++){const minors=alive().filter(m=>m.kage<OF_AGE);if(!minors.length)break;
+    for(let q=0;q<4;q++){G.time.s=q;autoAll(news,true);birthCheck(news);realmEvent(news,true)}yearTurn(news,true);G.time.y++;
+    const up=minors.filter(m=>ofAge(m)&&!m.spouse);if(up.length)first=up.sort((a,b)=>b.kage-a.kage||minors.indexOf(a)-minors.indexOf(b))[0]}
   G.time.s=0;G.time.used=0;G.boosts=[];syncStanding();
   /* the court moves on: most old suitors are wed elsewhere, and a new crop arrives */
   const before=G.suitors.length;G.suitors=G.suitors.filter(()=>R()<.15);
   news.push({c:'warn',t:`Of the suitors at court, ${before-G.suitors.length} were wed elsewhere over the years${G.suitors.length?`; ${G.suitors.length} remain${G.suitors.length===1?'s':''}`:''}.`});
-  const heir=h.c.dead?null:h.c;
+  const heir=first;
   if(heir){switchTo(heir);crop(6);G.sel=G.suitors[G.suitors.length-6].id;
     news.push({c:'good',t:`${esc(heir.name)} comes of age and takes up the courting season for House ${esc(heir.house)}. A new crop of suitors arrives.`})}
   G.log=[{title:`The years pass: ${start} to ${seasonName()}`,news}].concat(G.log||[]).slice(0,30);
@@ -830,9 +992,9 @@ function weightedSpecies(sex){const w={Kin:3,Fey:2,Fur:2,Pel:sex==='m'?2:.7,Gobl
 function tasteRoll(sp,n,exclude){const bias=SP_TOPICS[sp]||[],out=[];
   while(out.length<n){const k=R()<.55?pick(bias):pick(TOPIC_KEYS);if(!out.includes(k)&&!exclude.includes(k))out.push(k)}return out}
 
-function newSuitor(){
+function newSuitor(H0){
   const want=G.me.interest,sex=want==='m'?'m':want==='f'?'f':(R()<.5?'m':'f');
-  const H=pickHouse(sex,[G.me.house])||newHouse(weightedSpecies(sex),new Set()),sp=H.sp;
+  const H=(H0&&SEX_W(sex)[H0.sp]>0?H0:null)||pickHouse(sex,[G.me.house])||newHouse(weightedSpecies(sex),new Set()),sp=H.sp;
   const gap=maxAgeGap(G.me.kage),lo=Math.max(20,G.me.kage-gap),hi=Math.max(lo,G.me.kage+gap);
   let pers,drive;
   for(let tries=0;tries<50;tries++){
@@ -974,7 +1136,7 @@ function sibRivalFor(s){if(!s.dates.length)return null;
   return {sib:m.id,sex:m.sex,sp:m.sp,name:m.name,house:m.house,pic:m.pic,track:m.track,prog:0,since:tIndex()}}
 function sibOf(r){return r&&r.sib?G.family.find(m=>m.id===r.sib):null}
 function endSeason(){const news=[];seasonTick(news);finishSeason(news)}
-function seasonTick(news){const now=tIndex(),smit=s=>s.aff>=tiersFor(affMax(s))[3][0];autoAll(news);
+function seasonTick(news){const now=tIndex(),smit=s=>s.aff>=tiersFor(affMax(s))[3][0];expireSummons(news);autoAll(news);
   G.suitors.slice().forEach(s=>{const kin=s.dates.length?null:kinCourting(s)[0],kr=kin&&s.rels?s.rels[kin.id]:null;
     if(kin&&!kin.auto)return; /* reserved for a family member waiting their turn: nothing moves */
     const N=esc(s.name),aff=kr?kr.aff:s.aff,dated=(kr?kr.lastSeen:s.lastSeen)===now;
@@ -991,7 +1153,7 @@ function seasonTick(news){const now=tIndex(),smit=s=>s.aff>=tiersFor(affMax(s))[
         if(gain)news.push({c:rivalWarn(s)?'bad':'warn',t:`${r.sib?'Your '+relWord(r)+' ':''}${esc(r.name)} presses ${pr(r).his} suit with ${N} (${r.prog}/${affMax(s)}).${rivalWarn(s)?' A betrothal is close.':''}`})}}
     else if(R()<RIVAL_ODDS&&aff<affMax(s)){const sr=R()<SIB_RIVAL_ODDS?sibRivalFor(s):null;s.rival=sr||newRival(s);
       news.push({c:sr?'bad':'warn',t:sr?`Your ${relWord(sr)} ${esc(sr.name)} has set ${pr(sr).his} heart on ${N} too.`:`${esc(s.rival.name)} of House ${esc(s.rival.house)} has begun courting ${N}.`})}});
-  birthCheck(news);news.ended=seasonName();G.time.s++;if(G.time.s>3){G.time.s=0;yearTurn(news);G.time.y++}expireBoosts(news);G.time.used=0}
+  birthCheck(news);realmEvent(news);news.ended=seasonName();G.time.s++;if(G.time.s>3){G.time.s=0;yearTurn(news);G.time.y++}expireBoosts(news);G.time.used=0}
 function finishSeason(news){
   if(!news.length)news.push({c:'',t:'A quiet season. Nothing changes.'});
   G.log=[{title:news.ended,news}].concat(G.log||[]).slice(0,30);
@@ -1099,17 +1261,21 @@ function endDate(){const wed=G.date&&G.date.wedding,sid=G.date&&G.date.sid;G.dat
 /* ---------- save / load ---------- */
 function save(){try{if(G.me)G.meId=G.me.id;const {me,...rest}=G;localStorage.setItem(slotKey(slot),JSON.stringify(rest));localStorage.setItem(ACTIVE_KEY,String(slot));$('saveNote').textContent='Saved in this browser.'}catch(e){$('saveNote').textContent='Could not save in this browser.'}}
 function load(){try{const t=localStorage.getItem(slotKey(slot));if(t){const g=JSON.parse(t);if(g&&(g.me||g.family)&&g.suitors)return g}}catch(e){}return null}
-function newGame(){G={me:null,suitors:[],next:1,sel:null,date:null,dateCount:0,time:{y:1,s:0,used:0},log:[],family:[],fnext:1};G.me=newMe();givePic(G.me);G.family=[G.me];G.meId=G.me.id;G.houses=rollHouses(G.me.house);G.deedProg=0;G.baseStanding=G.me.track;G.boosts=[];G.tempProg=0;
+function newGame(){G={me:null,suitors:[],next:1,sel:null,date:null,dateCount:0,time:{y:1,s:0,used:0},log:[],family:[],fnext:1};G.me=newMe();givePic(G.me);G.family=[G.me];G.meId=G.me.id;G.houses=rollHouses(G.me.house);seatCourt();G.poolV=1;G.deedProg=0;G.baseStanding=G.me.track;G.boosts=[];G.tempProg=0;
   crop(6);G.sel=G.suitors[0].id;view='you';save();render()}
 const PAIR_ODDS=.2;
-function crop(n){const out=[];for(let i=0;i<n;i++){const s=newSuitor();G.suitors.push(s);out.push(s)}
+/* monster houses able to offer a suitor of the sex the courtier seeks (a Succubus house never offers a man) */
+function monsterHouseFor(){const want=G.me.interest,sex=want==='m'?'m':want==='f'?'f':null;
+  const hs=(G.houses||[]).filter(h=>MONSTER_KEYS.includes(h.sp)&&h.court!==false&&h.name!==G.me.house&&(sex?SEX_W(sex)[h.sp]>0:true));return hs.length?pick(hs):null}
+/* crop(n, oneMonster): with oneMonster, if none of the first n−1 is monster folk, the last comes from a monster house */
+function crop(n,oneMonster){const out=[];for(let i=0;i<n;i++){const force=oneMonster&&i===n-1&&!out.some(s=>MONSTER_KEYS.includes(s.sp));const s=newSuitor(force?monsterHouseFor():null);G.suitors.push(s);out.push(s)}
   if(out.length>=2&&R()<PAIR_ODDS){const a=out[0],b=out[1];
     b.sp=a.sp;b.house=a.house;b.seat=a.seat;b.track=a.track;
     const taken=new Set([...G.suitors.map(x=>x.name),...(G.family||[]).map(x=>x.name)]);let nm=nameFor(b.sex,b.sp);for(let i=0;i<20&&taken.has(nm);i++)nm=nameFor(b.sex,b.sp);b.name=nm;
     b.quirk=traitsFor(b.sp);b.st=rollStats(b.sp);b.pic=null;givePic(b);addStandards(b);a.sibOf=b.id;b.sibOf=a.id}
   return out}
 function moreFaces(){const keep=G.suitors.filter(s=>s.dates.length||kinCourting(s).length),n=keep.length;G.suitors=keep.slice();
-  crop(5);G.sel=G.suitors[n].id;save();render()}
+  crop(5,true);G.sel=G.suitors[n].id;save();render()}
 
 /* ---------- rendering ---------- */
 function hearts(a,gain,max){let h='';for(let i=0;i<max;i++){const on=i<a,g=gain>0&&i>=a-gain&&i<a;h+=`<i class="${g?'gain':on?'on':''}"></i>`}
@@ -1122,7 +1288,7 @@ const spLine=m=>`${SPECIES[m.sp].name}, ${m.kage} in Kin years${m.sp!=='Kin'?` <
 function renderMe(){const m=G.me;$('mecard').innerHTML=`${portrait(m,56)}<div><b>${esc(m.name)} ${esc(m.house)}</b><span>${SPECIES[m.sp].name} · ${POWER[myPower()].n}${G.me.spouse?` · wed to ${esc(G.me.spouse.name)}`:''}</span></div>`}
 
 function renderNav(){const items=[['you','You'],['suitors','Suitors']];if(G.date)items.push(['date','The Date']);items.push(['house','Your House'],['court','The Court']);items.push(['chronicle','Chronicle'],['rules','How it works']);
-  $('sect').innerHTML=items.map(([k,l])=>`<button data-view="${k}" ${view===k?'aria-current="page"':''}>${l}${k==='date'?'<span class="live">in progress</span>':''}</button>`).join('')}
+  $('sect').innerHTML=items.map(([k,l])=>`<button data-view="${k}" ${view===k?'aria-current="page"':''}>${l}${k==='date'?'<span class="live">in progress</span>':''}${k==='house'&&(G.summons||[]).length?'<span class="live">summons</span>':''}</button>`).join('')}
 
 function renderYou(){const m=G.me,used=STATS.reduce((a,k)=>a+m.st[k],0),pool=POOL_TOTAL-used,locked=!!m.locked;
   return `<section class="pane d"><h2>Your courtier</h2>
@@ -1192,12 +1358,13 @@ function renderCourt(){const hs=(G.houses||[]).slice().sort((a,b)=>b.track-a.tra
       <span class="rj">Thinks of your house: <b style="color:var(${h.op>0?'--accent':h.op<0?'--rose':'--muted'})">${opWord(h.op)} (${opSign(h.op)})</b>${h.ties?` · bound by ${h.ties} marriage${h.ties===1?'':'s'}`:''}${wed.length?` (${wed.map(m=>esc(m.name)+' & '+esc(m.spouse.name)).join(', ')})`:''}</span>
       ${at.length?`<span class="rj">At court: ${at.map(s=>esc(s.name)).join(', ')}</span>`:''}
       ${gr.length?`<span class="rj" style="color:var(--rose)">Grudges: ${gr.map(g=>`${esc(g.name)}, ${esc(g.how)} by ${esc(g.against)} (${esc(g.when)})`).join('; ')}</span>`:''}</span></li>`};
-  return `<section class="pane d"><h2>The Court</h2><p class="muted" style="margin:0 0 8px">The great houses of the realm. Every suitor, rival and drunken lord comes from one of them, and they remember your house across the generations.</p>
-    <p style="font-size:17px;margin:0 0 10px">A house’s <b>opinion</b> of yours runs −5 to +5. Its suitors’ starting affection shifts by half of it (rounded toward zero), and at +3 or more every roll with them gets +1 (−1 at −3 or less). A marriage raises it by 3; shaming one of their lords costs 2. Each year it may ease a step back toward neutral, or toward +2 for a house bound to yours by marriage, and a house’s power may drift a step up or down.</p>
-    <ul class="famlist">${hs.map(row).join('')}</ul></section>`}
+  return `<section class="pane d"><h2>The Court</h2><p class="muted" style="margin:0 0 8px">The great houses of the realm. Every suitor, rival and drunken lord comes from one of them, and they remember your house across the generations. Each year twelve come to court: every strong and middling house, with the weak drawn for the seats left, and one of those weak seats always goes to a house of the monster folk. Only houses at court send new suitors, rivals and revellers; anyone you are already courting stays.</p>
+    <p style="font-size:17px;margin:0 0 10px">A house’s <b>opinion</b> of yours runs −5 to +5. Its suitors’ starting affection shifts by half of it (rounded toward zero), and at +3 or more every roll with them gets +1 (−1 at −3 or less). A marriage raises it by 3; shaming one of their lords costs 2. Each year it may ease a step back toward neutral, or toward +2 for a house bound to yours by marriage, and a house’s power may drift a step, usually back toward the middle.</p>
+    <h3>At court this year</h3><ul class="famlist">${hs.filter(h=>h.court!==false).map(row).join('')}</ul>
+    ${hs.some(h=>h.court===false)?`<h3>Away this year</h3><p class="muted" style="font-size:15px;margin:0 0 6px">Weak houses not grand enough for this year’s galas. They may return next year.</p><ul class="famlist">${hs.filter(h=>h.court===false).map(row).join('')}</ul>`:''}</section>`}
 function famPic(m,s){return m.kage>=OF_AGE?portrait(m,s):`<span class="kidpic" style="width:${s}px;height:${s}px">${esc(m.name.charAt(0))}</span>`}
 function renderHouse(){const h=nextHeir(),me=G.me;
-  const row=m=>{const sp=m.spouse,st=m.dead?`Died ${esc(m.died||'')}`:m.kage<OF_AGE?`Child, ${m.kage} in Kin years; of age at ${OF_AGE}`:sp?`Wed to ${esc(sp.name)} of ${esc(sp.house)}${sp.dead?' (died)':''} · warmth ${m.wed?m.wed.warmth:0}`:'Unwed';
+  const row=m=>{const sp=m.spouse,st=m.dead?`Died ${esc(m.died||'')}`:m.kage<OF_AGE?(()=>{const y=yrsToAge(m);return `Child, ${m.kage} in Kin years; of age in ${y} year${y===1?'':'s'}`})():sp?`Wed to ${esc(sp.name)} of ${esc(sp.house)}${sp.dead?' (died)':''} · warmth ${m.wed?m.wed.warmth:0}`:'Unwed';
     const kids=G.family.filter(c=>c.parents&&c.parents.includes(m.id));
     return `<li class="fam ${m===me?'me':''} ${m.dead?'dead':''}">${famPic(m,52)}<span style="min-width:0;flex:1"><b>${esc(m.name)}</b> <span class="muted">${SPECIES[m.sp].name}, ${m.sex==='m'?'man':'woman'}${m.sibling?', your sibling':m.parents?', child of '+m.parents.map(id=>{const p=G.family.find(x=>x.id===id)||(G.family.find(x=>x.spouse&&x.spouse.id===id)||{}).spouse;return p?esc(p.name):'?'}).join(' & '):''}</span>
       <span class="rj">${st}${kids.length?` · children: ${kids.map(c=>esc(c.name)).join(', ')}`:''}</span></span>
@@ -1208,9 +1375,10 @@ function renderHouse(){const h=nextHeir(),me=G.me;
   return `<section class="pane d"><h2>House ${esc(me.house)}</h2>
     <p class="muted" style="margin:0 0 8px">${POWER[myPower()].n}. A married couple may have a child at the end of any season (at most one a year).</p>
     ${standingPanel()}
-    ${h?`<div class="acts" style="margin:0 0 10px"><button class="main" data-act="jump" ${G.date?'disabled':''}>Skip ${h.yrs} year${h.yrs===1?'':'s'}, to ${esc(h.c.name)}’s coming of age</button></div>
-      <p class="muted" style="font-size:15px;margin:-4px 0 10px">Everyone ages, more children may come, and most suitors now at court will have wed elsewhere. ${esc(h.c.name)} then takes up the courting.</p>`:''}
-    <h3>The family</h3>${canSwitch()?'':'<p class="muted" style="font-size:15px;margin:0 0 6px">Who courts, and auto-run, can be changed at the start of a season, before any date.</p>'}<ul class="famlist">${G.family.filter(m=>!m.dead).map(row).join('')}</ul>
+    ${summonsPanel()}
+    ${h?`<div class="acts" style="margin:0 0 10px"><button class="main" data-act="jump" ${G.date?'disabled':''}>Skip to the next coming of age</button></div>
+      <p class="muted" style="font-size:15px;margin:-4px 0 10px">Everyone ages, more children may come, and most suitors now at court will have wed elsewhere. Whoever comes of age first then takes up the courting.</p>`:''}
+    <h3>The family</h3>${canSwitch()?'':'<p class="muted" style="font-size:15px;margin:0 0 6px">Who courts, and auto-run, can be changed at the start of a season, before any date.</p>'}<ul class="famlist">${G.family.filter(m=>!m.dead&&m.kage>=OF_AGE).concat(ageQueue().map(q=>q.c)).map(row).join('')}</ul>
     ${G.family.some(m=>m.dead)?`<details class="strules"><summary>The dead</summary><ul class="famlist">${G.family.filter(m=>m.dead).map(row).join('')}</ul></details>`:''}
     ${spouse}</section>`;
   /* (legacy view below kept unreachable for reference) */
@@ -1224,7 +1392,7 @@ function renderSuitors(){const s=suitor(G.sel)||G.suitors[0];if(s)G.sel=s.id;
   const dated=G.suitors.filter(x=>x.dates.length),kinC=G.suitors.filter(x=>!x.dates.length&&kinCourting(x).length),fresh=G.suitors.filter(x=>!x.dates.length&&!kinCourting(x).length);
   const li=(x,by)=>`<li><button data-sel="${x.id}" ${x.id===G.sel?'aria-current="true"':''}>${portrait(x,52)}<span style="min-width:0"><span class="rn">${esc(x.name)}</span><span class="rj">${SPECIES[x.sp].name} of ${esc(x.house)} <span style="color:var(--gold)">${'★'.repeat(POWER[powerOf(x)].stars)}</span> · <span class="h">${by?'courted by '+by:sTier(x)}</span>${x.rival?` <span title="Has a rival" style="color:${rivalWarn(x)?'var(--rose)':'var(--gold)'}">⚔</span>`:''}</span></span></button></li>`;
   const roster=`<section class="pane"><h2>Suitors</h2><ul class="roster">${dated.length?`<li class="ghead">Courting</li>${dated.map(li).join('')}`:''}${kinC.length?`<li class="ghead">Courted by your kin</li>${kinC.map(x=>li(x,kinCourting(x).map(m=>esc(m.name)).join(', '))).join('')}`:''}${fresh.length?`<li class="ghead">New faces</li>${fresh.map(li).join('')}`:''}</ul>
-    <div class="acts"><button data-act="more">Meet new faces</button></div><p class="muted" style="font-size:14px;margin:6px 0 0">New faces replace everyone no one in your family is courting.</p></section>`;
+    <div class="acts"><button data-act="more">Meet new faces</button></div><p class="muted" style="font-size:14px;margin:6px 0 0">New faces replace everyone no one in your family is courting. Each new crop includes at least one of the monster folk.</p></section>`;
   if(!s)return `<div class="grid">${roster}<section class="pane"><p class="empty">No one yet.</p></section></div>`;
   const p=pr(s);
   const hist=s.dates.length?`<ul class="hist">${s.dates.slice().reverse().map(h=>`<li>${esc(h.venue)}: ${esc(h.verdict)} <span class="delta ${h.delta>0?'p':h.delta<0?'n':'z'}">${h.delta>0?'+':''}${h.delta}</span></li>`).join('')}</ul>`:`<p class="empty">You have not taken ${p.him} out yet.</p>`;
@@ -1285,7 +1453,9 @@ function renderRules(){return `<section class="pane rules"><h2>How it works</h2>
   <p><b>Brothers and sisters at court.</b> Sometimes two suitors come from the same house. Court both while their affection is within 2 of each other and they turn <b>jealous</b>: each date with one has a 50% chance the other crashes it (success +1 and soothes them; failure −1 with both). While you court both, their house will only give the <b>elder</b> in marriage. At the wedding, a sibling you left at Fond or more makes a <b>scene</b> at the feast. Afterwards, one left at Fond stays a <b>bitter in-law</b> (warmth −1); one left Smitten or more offers to be your <b>secret lover</b>, and turns bitter if refused.</p>
   <p><b>Propensities</b> shift the target. A trait that warms to your approach gives +1, one put off by it gives −2. Serving their drive gives +1 for the approach and +1 for the topic. A loved topic gives +1, a disliked one −2. The total is capped at ±4. The venue adds +1 or −1 to every roll if it is full of things they love or dislike.</p>
   <p><b>House power</b> sets how much affection it takes to win a suitor. Each track is 10 + 2d4 long (7 + 2d4 for Goblin, Ratfolk, Succubus and Dhampir), and Devoted is its end: ${Object.values(POWER).map(p=>`${p.n.toLowerCase()} ${p.r}`).join(', ')}. The other tiers sit at the same share of every track.</p>
-  <p><b>The great houses.</b> A dozen houses are rolled with each game and last across the generations (The Court lists them). Suitors, rivals and drunken lords all come from them, and a suitor’s track is their house’s power. Each house holds an <b>opinion</b> of yours, −5 to +5: its suitors start with affection shifted by half of it, and at +3 or more every roll with them gets +1 (−1 at −3 or less). A marriage into a house raises its opinion by 3; shaming one of its lords costs 2. Each year a house’s power may drift a step, and its opinion may ease back toward neutral (toward +2 if bound to yours by marriage).</p>
+  <p><b>The great houses.</b> Eighteen houses are rolled with each game (four each of Kin and Fey, three each of Fur and Pel, and one of each monster folk) and last across the generations (The Court lists them). Each year twelve come to court: every strong and middling house, with the weak drawn for the seats left, and one of those weak seats always goes to a monster house. Only houses at court send new suitors and rivals; anyone already being courted stays. Suitors, rivals and drunken lords all come from them, and a suitor’s track is their house’s power. Each house holds an <b>opinion</b> of yours, −5 to +5: its suitors start with affection shifted by half of it, and at +3 or more every roll with them gets +1 (−1 at −3 or less). A marriage into a house raises its opinion by 3; shaming one of its lords costs 2. Each year a house’s power may drift a step, and its opinion may ease back toward neutral (toward +2 if bound to yours by marriage).</p>
+  <p><b>Realm events.</b> Every season fortune strikes. Three times in five it falls on one house (yours can be the one): a bumper harvest, a new silver seam, a royal charter, or blight, fire, bandits, scandal. Otherwise it is widespread: a golden summer, new trade roads, or famine, floods, raiders, plague, and each house, yours included, has a one-in-three chance of being caught while the rest are spared. Good or bad comes at even odds, and moves a house’s power one step for good (two, for the great ones: a gold strike, a council seat, crown seizure, rebellion, plague). When it touches your own house, your <b>lasting standing</b> rises or falls by whole points. Good fortune warms marriages: a house bound to yours that prospers, or prospers alongside you, thinks one step better of your house. <b>The first place in the realm</b> is fought over: each year that two or more houses are strong, there is a 20% chance of a struggle (war, an assassin, calamity, treason). The most powerful holds the top, and every other strong house falls 1 to 2. When your own house is strong, it is drawn into the struggle as a summons.</p>
+  <p><b>Summons.</b> One season in three, the realm’s event calls on your house instead: a call to the banners, a border war, an ally in trouble, famine, plague, a disputed succession, the king’s tourney, a bandit lord, the crown’s auditors, a feud at court, an embassy over the sea, or the struggle for the first place in the realm. It waits on Your House for the season. Answers that need a roll use one of the season’s dates and are rolled on the named stat: a success wins the favour of the houses involved, and a failure costs only the date. Answers that need no roll always succeed, but cost a point of lasting standing (hiring sellswords, ransoming captives, pledging your lands, opening your granaries, taking in the sick, hosting rival heirs or a reconciliation feast, putting up the prize purse, garrisoning the roads). Staying out is free, but may cool the houses involved, and it is what happens if the season ends unanswered. The struggle for the top is the exception: win and every rival falls 1 to 2; fail and your lasting standing falls 1 to 2; yield and it falls 1.</p>
   <p><b>Your house’s standing</b> rises through <b>deeds</b> on Your House. Each uses one of the season’s dates and is rolled on a stat: Might to ride for the crown, Ability to put the estates in order, Insight to work the council. Success gives +1 deed progress (a 1 gives +2), a 10 loses 1. Each standing point needs 3 progress up to 14, 4 up to 16, and 5 to reach 17 and 18. A point won by deeds is <b>fleeting</b>: it lasts a year (four seasons), then fades. The fourth deed, <b>Train yourself</b>, is rolled on Grit and adds 5 training points on a success and 2 on a failure, which never fade. <b>Lasting standing</b> comes only from marriage: every marriage of your family into a great house adds 1, 2 or 3 lasting progress by that house’s power, toward permanent points (same costs). Deeds can lift you over a house-standing dealbreaker for a while; marriages make it stick.</p>
   <p><b>Affection</b> starts low. A success gives +1, +1 more if it suited them, −1 if it didn’t, and +1 on a natural 1. A failure costs nothing if neutral, −1 if it went against their tastes, and −1 more on a 10.</p>
   <p><b>Read them</b> uses Insight to reveal one hidden taste instead of winning affection. Anything your approaches touch is revealed by the outcome, too. Known tastes show as ▲ and ▼ hints on later choices.</p>
@@ -1347,6 +1517,7 @@ document.addEventListener('click',e=>{const t=e.target.closest('button');if(!t)r
     /* make sure the new courtier has faces to meet: suitors of the right sex whom no other kin is courting */
     if(G.suitors.filter(s=>s.sex!==G.me.sex&&!s.dates.length&&!kinCourting(s).length).length<3){const n=G.suitors.length;crop(5);if(!suitor(G.sel)||suitor(G.sel).sex===G.me.sex)G.sel=G.suitors[n].id}
     view='you';save();render()}return}
+  if(t.dataset.sum!=null){answerSummons(+t.dataset.sum,t.dataset.so);return}
   if(t.dataset.deed){doDeed(t.dataset.deed);return}
   if(t.dataset.train){const m=G.me,k=t.dataset.train,c=m.st[k];if(c<STAT_MAX&&(m.train||0)>=c){m.train-=c;m.st[k]++;save();render()}return}
   if(t.dataset.st){const m=G.me,k=t.dataset.st,dv=+t.dataset.dv,used=STATS.reduce((x,y)=>x+m.st[y],0);
@@ -1386,7 +1557,7 @@ function boot(){view='suitors';venuePick=false;confirmEnd=false;G=load();if(G){
   /* older saves: one courtier, spouse kept globally */
   if(!G.family){const me=G.me;me.id='f0';if(G.spouse){me.spouse=G.spouse;me.wed=G.wed}delete G.spouse;delete G.wed;if(G.dateCount>0)me.locked=true;G.family=[me];G.fnext=1;G.meId='f0';
     me.interest=me.sex==='m'?'f':'m';G.me=me}
-  G.me=G.family.find(x=>x.id===G.meId)||G.family[0];migrateHouses();if(G.baseStanding==null){G.baseStanding=G.me.track;G.boosts=[];G.tempProg=0}if(!G.time)G.time={y:1,s:0,used:0};if(!G.log)G.log=[];if(G.me.kage<20)G.me.kage=20;if(!G.me.track)G.me.track=rollTrack(G.me.sp);if(!G.me.line)G.me.line=newLine(G.me);if(G.me.train==null)G.me.train=0;G.suitors.forEach(s=>{if(!s.std)addStandards(s)});G.suitors.forEach(s=>{if(!s.track||(MONSTER_KEYS.includes(s.sp)&&s.track>15)){s.track=rollTrack(s.sp);delete s.power}s.aff=Math.min(s.aff,affMax(s))});if(autoAdvance())view='chronicle';save();if(G.date)view='date';render()}else newGame()}
+  G.me=G.family.find(x=>x.id===G.meId)||G.family[0];migrateHouses();migratePool();if(G.baseStanding!=null&&G.baseStanding<myFloor()){G.baseStanding=myFloor();syncStanding()}if(G.baseStanding==null){G.baseStanding=G.me.track;G.boosts=[];G.tempProg=0}if(!G.time)G.time={y:1,s:0,used:0};if(!G.log)G.log=[];if(G.me.kage<20)G.me.kage=20;if(!G.me.track)G.me.track=rollTrack(G.me.sp);if(!G.me.line)G.me.line=newLine(G.me);if(G.me.train==null)G.me.train=0;G.suitors.forEach(s=>{if(!s.std)addStandards(s)});G.suitors.forEach(s=>{if(!s.track||(MONSTER_KEYS.includes(s.sp)&&s.track>15)){s.track=rollTrack(s.sp);delete s.power}s.aff=Math.min(s.aff,affMax(s))});if(autoAdvance())view='chronicle';save();if(G.date)view='date';render()}else newGame()}
 initSlots();boot();
 </script>
 </body></html>
