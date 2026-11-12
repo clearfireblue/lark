@@ -896,29 +896,98 @@ function birthCheck(news){
     if(kids.some(c=>c.bornT!=null&&tIndex()-c.bornT<4))return; /* no more than one child a year */
     const yearly=clamp(birthOdds(mother,kids.length)+.02*Math.max(0,w),0,.95),p=1-Math.pow(1-yearly,1/4);
     if(R()<p){const c=makeChild(a,b,w);c.bornT=tIndex();news.push({c:'good',fam:1,t:`${esc(mother.name)} and ${esc(mother===a?b.name:a.name)} welcome a ${c.sex==='m'?'son':'daughter'}, ${esc(c.name)} (${SPECIES[c.sp].name}).`})}})}
+/* ---------- Phase 8a: secret lovers and scandal births ----------
+   Let a suitor go at Smitten (25%) or Devoted (50%) and they may offer an affair: "it doesn't have to be love". A courtier may keep several lovers.
+   A tryst uses one of the season's dates and is rolled on the lover-keeper's Insight. Success: it stays hidden, the lover's house warms (+1),
+   and a child may be conceived (half the mother's yearly birth odds, at most one a year with each lover). Failure: the affair is found out and ends:
+   lasting standing −1, and marriage warmth −2 if the keeper is wed. A lover's child is raised in secret in the lover's house: each year a 10% chance
+   it comes out (the same scandal), and it always comes out when the child comes of age, and joins your house. Base-born children inherit only after the true-born. */
+/* THE SECRET LOVER UPDATE: set to false to turn off everything in this block (affair offers, trysts, kin's own affairs, hidden children coming to light,
+   the Your House panel and the rules text). Off, the wedding-feast lover goes back to how it was before (a name on Your House, no mechanics),
+   and at load every save's lovers, pending offer and still-hidden children are cleared out. Base-born children already in the family keep their place. */
+const SECRET_LOVER_UPDATE=true;
+const LOVER_ODDS={smit:.25,dev:.5},SCANDAL_WARMTH=2,SCANDAL_STAND=1,REVEAL_ODDS=.1;
+const trueBorn=m=>!m.base;
+const loversOf=m=>(SECRET_LOVER_UPDATE&&m&&!m.dead&&m.lovers)||[];
+/* with the update off: clear out lovers, a waiting offer and children still hidden */
+function clearLoverUpdate(){G.family.forEach(m=>delete m.lovers);G.family=G.family.filter(c=>!c.hidden);G.loverOffer=null;G.lastTryst=null}
+function loverFrom(s){G.lnext=(G.lnext||0)+1;return {id:'L'+G.lnext,name:s.name,house:s.house,sex:s.sex,sp:s.sp,pic:s.pic,kage:s.kage,yrs:s.yrs==null?toSpAge(s.kage,s.sp):s.yrs,since:seasonName(),kids:0}}
+/* letting a suitor go: one won to Smitten or Devoted may offer to stay on as a secret lover */
+function loverOffer(s){if(!SECRET_LOVER_UPDATE||!s||!s.dates.length||G.me.auto||s.sex===G.me.sex)return;const T=tiersFor(affMax(s)),dev=s.aff>=affMax(s);
+  if(s.aff<T[3][0]||R()>=(dev?LOVER_ODDS.dev:LOVER_ODDS.smit))return;G.loverOffer={forId:G.me.id,L:loverFrom(s),dev}}
+function takeLover(yes){const o=G.loverOffer,m=o&&G.family.find(x=>x.id===o.forId);G.loverOffer=null;if(!m||m.dead)return;
+  const t=yes?`${esc(o.L.name)} of House ${esc(o.L.house)} becomes ${esc(m.name)}’s secret lover.`:`${esc(m.name)} turns ${esc(o.L.name)} away, and ${pr(o.L).he} leaves the court.`;
+  if(yes)m.lovers=(m.lovers||[]).concat([o.L]);G.log=[{title:`${seasonName()}: ${yes?'a secret':'a parting'}`,news:[{c:yes?'warn':'',fam:1,t}]}].concat(G.log||[]).slice(0,30)}
+function offerPanel(){if(!SECRET_LOVER_UPDATE)return '';const o=G.loverOffer,m=o&&G.family.find(x=>x.id===o.forId);if(!m)return '';const L=o.L,p=pr(L);
+  return `<section class="pane"><div class="dhead"><figure class="cam" style="width:120px">${portrait(L,108,true)}</figure><div style="min-width:0">
+    <div class="evbox" style="margin-top:0"><b>${o.dev?'Devoted still':'Smitten still'}</b>${esc(L.name)} of House ${esc(L.house)} catches ${esc(m.name)}’s sleeve as ${p.he} goes. “It doesn’t have to be love. It doesn’t have to be anything anyone knows about.”</div>
+    <div class="acts"><button class="danger" data-act="takeLover">Take ${esc(L.name)} as a secret lover</button><button data-act="refuseLover">Let ${p.him} go for good</button></div>
+    <p class="muted" style="font-size:15px;margin:6px 0 0">A lover is met in secret on Your House, with one of the season’s dates and an Insight roll. Fail it, and the affair is found out: lasting standing −${SCANDAL_STAND}${m.spouse?`, marriage warmth −${SCANDAL_WARMTH}`:', and marriage warmth −'+SCANDAL_WARMTH+' if wed by then'}.</p></div></div></section>`}
+const canTryst=()=>datesLeft()>0&&!G.date&&!G.me.auto&&!stuck();
+/* the scandal: standing falls, a marriage cools, and the affair is over */
+function scandal(m,L,lines){if(m.spouse&&!m.spouse.dead&&m.wed){m.wed.warmth-=SCANDAL_WARMTH;lines.push(`${esc(m.spouse.name)} learns of it: marriage warmth −${SCANDAL_WARMTH} (now ${m.wed.warmth}).`)}
+  lines.push(shiftMyStanding(-SCANDAL_STAND).trim());if(L&&m.lovers&&m.lovers.includes(L)){m.lovers=m.lovers.filter(x=>x!==L);lines.push(`${esc(L.name)} is sent away, and the affair is over.`)}}
+/* one tryst: an Insight roll by the lover-keeper */
+function trystRoll(m,L){const roll=ri(1,10),target=m.st.Insight,ok=roll===1||(roll!==10&&roll<=target),lines=[];
+  let head=`${esc(m.name)} meets ${esc(L.name)} in secret: d10 rolled ${roll} against Insight ${target}. `;
+  if(ok){head+='No one is the wiser.';const h=shiftOp(L.house,1);if(h)lines.push(`House ${esc(L.house)} thinks better of yours (${opWord(h.op).toLowerCase()}, ${opSign(h.op)}).`);
+    const c=loveChild(m,L);if(c)lines.push(`Months later, in secret, a ${c.sex==='m'?'son':'daughter'} is born: ${esc(c.name)} (${SPECIES[c.sp].name}), to be raised in House ${esc(L.house)}.`)}
+  else{head+='They are seen. The affair is found out.';scandal(m,L,lines)}
+  return {ok,txt:`${head} ${lines.join(' ')}`}}
+/* only the one courting now meets their own lovers, with the season's dates */
+function tryst(mid,lid){if(!SECRET_LOVER_UPDATE)return;const m=G.family.find(x=>x.id===mid),L=m&&loversOf(m).find(x=>x.id===lid);if(!L||m!==G.me||!ofAge(m)||!canTryst())return;useDate();
+  const {ok,txt}=trystRoll(m,L);G.lastTryst={ok,txt};
+  G.log=[{title:`${seasonName()}: ${ok?'a secret kept':'a scandal'}`,news:[{c:ok?'warn':'bad',fam:1,t:txt}]}].concat(G.log||[]).slice(0,30);save();render()}
+/* everyone else keeps their affairs on their own: at each season's end, one tryst with each lover, without using your dates.
+   The courtier joins in when on auto-run or when no one can court (all: the heir skip) */
+function autoTrysts(news,all){if(!SECRET_LOVER_UPDATE)return;alive().filter(m=>ofAge(m)&&loversOf(m).length&&(all||m!==G.me||G.me.auto||stuck())).forEach(m=>loversOf(m).slice().forEach(L=>{
+  const r=trystRoll(m,L);news.push({c:r.ok?'warn':'bad',fam:1,t:r.ok?r.txt:`<b>A scandal.</b> ${r.txt}`})}))}
+/* a tryst may bring a child, at half the mother's yearly odds, no more than one a year with each lover */
+function loveChild(m,L){const mother=m.sex==='f'?m:L;const F=SPECIES[mother.sp].fert,y=yrsOf(mother);if(y<F[0]||y>F[1])return null;
+  if(L.kidT!=null&&tIndex()-L.kidT<4)return null;const n=mother===m?G.family.filter(c=>c.parents&&c.parents.includes(m.id)).length:L.kids;
+  if(R()>=birthOdds(mother,n)/2)return null;const c=makeChild(m,L,0);c.base=true;c.hidden=true;c.raisedBy=L.house;c.pnames=[m.name,L.name];c.bornT=tIndex();L.kidT=tIndex();L.kids++;return c}
+/* a hidden child comes to light: by chance each year, and always when they come of age */
+function revealChild(c,news,grown){c.hidden=false;const m=G.family.find(x=>x.id===c.parents[0]),L=m&&loversOf(m).find(x=>x.id===c.parents[1]),lines=[];
+  if(m&&!m.dead)scandal(m,L,lines);else lines.push(shiftMyStanding(-SCANDAL_STAND).trim());
+  news.push({c:'bad',fam:1,t:`<b>A scandal.</b> ${grown?`${esc(c.name)}, raised in secret in House ${esc(c.raisedBy)}, comes of age and arrives at your gates`:`Word gets out: ${esc(c.name)}, raised in House ${esc(c.raisedBy)}, is the child of ${esc((c.pnames||[])[0]||'your house')}`}. ${pr(c).He} joins House ${esc(c.house)}, base-born. ${lines.join(' ')}`})}
+function loverPanel(){if(!SECRET_LOVER_UPDATE)return '';const keep=alive().filter(m=>loversOf(m).length&&ofAge(m));if(!keep.length&&!G.lastTryst)return '';const can=canTryst();
+  const secret=L=>G.family.filter(c=>c.hidden&&!c.dead&&c.parents&&c.parents[1]===L.id);
+  return `<h3>Secret lovers</h3>${keep.map(m=>loversOf(m).map(L=>{const h=houseOf(L.house),k=secret(L);
+    return `<div class="rivalcard" style="margin-bottom:6px">${portrait(L,52)}<span style="min-width:0;flex:1"><b style="font:600 17px var(--f-display)">${esc(L.name)}</b> <span class="muted">of House ${esc(L.house)} · ${esc(m.name)}’s lover since ${esc(L.since)}</span>
+      ${h?`<span class="rj">House ${esc(L.house)} thinks of yours: ${opWord(h.op).toLowerCase()} (${opSign(h.op)})</span>`:''}
+      ${k.length?`<span class="rj" style="color:var(--rose)">Raised in secret: ${k.map(c=>`${esc(c.name)} (of age in ${yrsToAge(c)} year${yrsToAge(c)===1?'':'s'})`).join(', ')}</span>`:''}
+      ${m===G.me&&!m.auto?`<span class="acts" style="margin-top:6px;display:flex"><button class="sm danger" data-tryst="${m.id}" data-lv="${L.id}" ${can?'':'disabled'}>Meet in secret · Insight ${m.st.Insight}</button></span>`:`<span class="rj">${esc(m.name)} keeps this affair on ${pr(m).his} own: one tryst each season, Insight ${m.st.Insight}.</span>`}</span></div>`}).join('')).join('')}
+    <p class="muted" style="font-size:15px;margin:4px 0 0">${esc(G.me.name)} meets ${pr(G.me).his} own lovers with the season’s dates; the rest of the family keep their affairs on their own, one tryst with each lover at every season’s end. A tryst is rolled on the lover-keeper’s Insight. Kept hidden, the lover’s house warms (+1) and a child may come of it, raised in secret in the lover’s house. Seen, the affair is over: lasting standing −${SCANDAL_STAND}, marriage warmth −${SCANDAL_WARMTH} if wed. A secret child comes to light one year in ten, and always when they come of age.</p>
+    ${!can&&loversOf(G.me).length&&!G.date?`<p class="muted" style="font-size:15px;margin:4px 0 0">${G.me.auto?esc(G.me.name)+' is on auto-run.':'No dates left this season.'}</p>`:''}
+    ${G.lastTryst?`<p class="rolled ${G.lastTryst.ok?'hit':'miss'}">${G.lastTryst.txt}</p>`:''}`}
+/* each year: lovers age, and may die; hidden children may come to light */
+function loversYear(news,quiet){if(!SECRET_LOVER_UPDATE)return;alive().forEach(m=>(m.lovers||[]).slice().forEach(L=>{ageUp(L);
+    if(yrsOf(L)>=oldOf(L)&&R()<(L.yrs-oldOf(L)+2)*.015){m.lovers=m.lovers.filter(x=>x!==L);news.push({c:'bad',fam:1,t:`${esc(m.name)}’s secret lover, ${esc(L.name)} of House ${esc(L.house)}, dies of old age. ${esc(m.name)} grieves where no one can see.`})}}));
+  G.family.filter(c=>c.hidden&&!c.dead&&c.kage<OF_AGE-1&&R()<REVEAL_ODDS).forEach(c=>revealChild(c,news,false))}
 /* each year: everyone ages and the old may die */
-function yearTurn(news,quiet){housesYear(news,quiet);topClash(news,quiet);seatCourt(quiet?null:news);
+function yearTurn(news,quiet){housesYear(news,quiet);topClash(news,quiet);seatCourt(quiet?null:news);loversYear(news,quiet);
   const everyone=[...alive(),...alive().map(m=>m.spouse).filter(x=>x&&!x.dead)];
   everyone.forEach(m=>{const was=m.kage;ageUp(m);
-    if(G.family.includes(m)&&was<OF_AGE&&m.kage>=OF_AGE){givePic(m);news.push({c:'good',fam:1,t:`${esc(m.name)} comes of age, and may now go courting.`})}
+    if(G.family.includes(m)&&was<OF_AGE&&m.kage>=OF_AGE){if(m.hidden)revealChild(m,news,true);givePic(m);news.push({c:'good',fam:1,t:`${esc(m.name)} comes of age, and may now go courting.`})}
     if(yrsOf(m)>=oldOf(m)&&R()<(m.yrs-oldOf(m)+2)*.015){m.dead=true;m.died=seasonName();news.push({c:'bad',fam:1,t:`${esc(m.name)} dies of old age, at ${m.yrs}.`})}});
   G.suitors.slice().forEach(s=>{ageUp(s);if(s.rival)ageUp(s.rival);
     if(s.yrs>=oldOf(s)&&R()<(s.yrs-oldOf(s)+2)*.015){G.suitors=G.suitors.filter(x=>x!==s);if(!quiet)news.push({c:'bad',t:`${esc(s.name)} of House ${esc(s.house)} dies of old age.`})}});
-  if(G.me.dead){const next=alive().filter(ofAge).find(m=>!m.spouse)||alive().find(ofAge)||alive()[0];
+  if(G.me.dead){const pool=alive().filter(m=>!m.hidden),grown=pool.filter(ofAge),next=grown.find(m=>!m.spouse&&trueBorn(m))||grown.find(m=>!m.spouse)||grown[0]||pool[0];
     if(next){const was=G.me;switchTo(next);news.push({c:'warn',fam:1,t:`With ${esc(was.name)} gone, ${esc(next.name)} carries on for House ${esc(next.house)}.`})}}}
 /* the next child to come of age, and how many years until then */
 /* years until a child comes of age: folk mature at different rates, so the soonest to come of age is not always the eldest */
 function yrsToAge(c){let yrs=0,y=yrsOf(c);while(Math.round(kinAge(y,c.sp))<OF_AGE&&yrs<80){y++;yrs++}return yrs}
 /* the children in the order they will come of age (ties: the elder in Kin years first) */
 const ageQueue=()=>alive().filter(m=>m.kage<OF_AGE).map(c=>({c,yrs:yrsToAge(c)})).sort((a,b)=>a.yrs-b.yrs||b.c.kage-a.c.kage);
-function nextHeir(){return ageQueue()[0]||null}
+/* base-born children inherit only after the true-born */
+function nextHeir(){const q=ageQueue();return q.find(x=>trueBorn(x.c))||q[0]||null}
 function jumpToHeir(){const h=nextHeir();if(!h||G.date)return;const start=seasonName({y:G.time.y,s:G.time.s});const news=[];
   /* run year by year and stop at the first child of the house to come of age: a child born during the skip, of a faster-maturing folk
      (Fur, Goblin, Ratfolk and so on), may come of age before the one who was next in line when the skip began */
   let first=null;expireSummons(news);
   for(let i=0;i<200&&!first;i++){const minors=alive().filter(m=>m.kage<OF_AGE);if(!minors.length)break;
-    for(let q=0;q<4;q++){G.time.s=q;autoAll(news,true);birthCheck(news);realmEvent(news,true)}yearTurn(news,true);G.time.y++;
-    const up=minors.filter(m=>ofAge(m)&&!m.spouse);if(up.length)first=up.sort((a,b)=>b.kage-a.kage||minors.indexOf(a)-minors.indexOf(b))[0]}
+    for(let q=0;q<4;q++){G.time.s=q;autoAll(news,true);autoTrysts(news,true);birthCheck(news);realmEvent(news,true)}yearTurn(news,true);G.time.y++;
+    const tb=minors.filter(trueBorn),up=minors.filter(m=>ofAge(m)&&!m.spouse&&(trueBorn(m)||!tb.length));if(up.length)first=up.sort((a,b)=>b.kage-a.kage||minors.indexOf(a)-minors.indexOf(b))[0]}
   G.time.s=0;G.time.used=0;G.boosts=[];syncStanding();
   /* the court moves on: most old suitors are wed elsewhere, and a new crop arrives */
   const before=G.suitors.length;G.suitors=G.suitors.filter(()=>R()<.15);
@@ -967,7 +1036,7 @@ function rollStats(sp){const st={};STATS.forEach(k=>st[k]=2);let pts=POOL_TOTAL-
   while(pts>0){const k=pick(STATS);if(st[k]<STAT_MAX){st[k]++;pts--}}enforcePrimary(st,sp);return st}
 
 /* portraits: same species and sex, avoiding faces already in play */
-function usedPics(ex){return new Set(G?[G.me,...(G.family||[]),...(G.family||[]).map(x=>x.spouse),...G.suitors,...G.suitors.map(x=>x.rival)].filter(x=>x&&x!==ex&&x.pic).map(x=>x.pic):[])}
+function usedPics(ex){return new Set(G?[G.me,...(G.family||[]),...(G.family||[]).map(x=>x.spouse),...(G.family||[]).flatMap(x=>x.lovers||[]),...G.suitors,...G.suitors.map(x=>x.rival)].filter(x=>x&&x!==ex&&x.pic).map(x=>x.pic):[])}
 /* the older GrimRealm/Pixavelon portraits carry old:1 and are hidden while this is on. The monster folk keep them until they have court portraits of their own.
    To strip them from the page later, delete the GrimRealm PORTRAITS entries marked old (everything before the noble portraits). */
 const HIDE_OLD_PORTRAITS=true;
@@ -1153,7 +1222,7 @@ function seasonTick(news){const now=tIndex(),smit=s=>s.aff>=tiersFor(affMax(s))[
         if(gain)news.push({c:rivalWarn(s)?'bad':'warn',t:`${r.sib?'Your '+relWord(r)+' ':''}${esc(r.name)} presses ${pr(r).his} suit with ${N} (${r.prog}/${affMax(s)}).${rivalWarn(s)?' A betrothal is close.':''}`})}}
     else if(R()<RIVAL_ODDS&&aff<affMax(s)){const sr=R()<SIB_RIVAL_ODDS?sibRivalFor(s):null;s.rival=sr||newRival(s);
       news.push({c:sr?'bad':'warn',t:sr?`Your ${relWord(sr)} ${esc(sr.name)} has set ${pr(sr).his} heart on ${N} too.`:`${esc(s.rival.name)} of House ${esc(s.rival.house)} has begun courting ${N}.`})}});
-  birthCheck(news);realmEvent(news);news.ended=seasonName();G.time.s++;if(G.time.s>3){G.time.s=0;yearTurn(news);G.time.y++}expireBoosts(news);G.time.used=0}
+  autoTrysts(news);birthCheck(news);realmEvent(news);news.ended=seasonName();G.time.s++;if(G.time.s>3){G.time.s=0;yearTurn(news);G.time.y++}expireBoosts(news);G.time.used=0}
 function finishSeason(news){
   if(!news.length)news.push({c:'',t:'A quiet season. Nothing changes.'});
   G.log=[{title:news.ended,news}].concat(G.log||[]).slice(0,30);
@@ -1365,20 +1434,21 @@ function renderCourt(){const hs=(G.houses||[]).slice().sort((a,b)=>b.track-a.tra
 function famPic(m,s){return m.kage>=OF_AGE?portrait(m,s):`<span class="kidpic" style="width:${s}px;height:${s}px">${esc(m.name.charAt(0))}</span>`}
 function renderHouse(){const h=nextHeir(),me=G.me;
   const row=m=>{const sp=m.spouse,st=m.dead?`Died ${esc(m.died||'')}`:m.kage<OF_AGE?(()=>{const y=yrsToAge(m);return `Child, ${m.kage} in Kin years; of age in ${y} year${y===1?'':'s'}`})():sp?`Wed to ${esc(sp.name)} of ${esc(sp.house)}${sp.dead?' (died)':''} · warmth ${m.wed?m.wed.warmth:0}`:'Unwed';
-    const kids=G.family.filter(c=>c.parents&&c.parents.includes(m.id));
-    return `<li class="fam ${m===me?'me':''} ${m.dead?'dead':''}">${famPic(m,52)}<span style="min-width:0;flex:1"><b>${esc(m.name)}</b> <span class="muted">${SPECIES[m.sp].name}, ${m.sex==='m'?'man':'woman'}${m.sibling?', your sibling':m.parents?', child of '+m.parents.map(id=>{const p=G.family.find(x=>x.id===id)||(G.family.find(x=>x.spouse&&x.spouse.id===id)||{}).spouse;return p?esc(p.name):'?'}).join(' & '):''}</span>
+    const kids=G.family.filter(c=>c.parents&&c.parents.includes(m.id)&&!c.hidden);
+    return `<li class="fam ${m===me?'me':''} ${m.dead?'dead':''}">${famPic(m,52)}<span style="min-width:0;flex:1"><b>${esc(m.name)}</b> <span class="muted">${SPECIES[m.sp].name}, ${m.sex==='m'?'man':'woman'}${m.sibling?', your sibling':m.pnames?`, base-born child of ${m.pnames.map(esc).join(' & ')}`:m.parents?', child of '+m.parents.map(id=>{const p=G.family.find(x=>x.id===id)||(G.family.find(x=>x.spouse&&x.spouse.id===id)||{}).spouse;return p?esc(p.name):'?'}).join(' & '):''}</span>
       <span class="rj">${st}${kids.length?` · children: ${kids.map(c=>esc(c.name)).join(', ')}`:''}</span></span>
       ${famActs(m)}</li>`};
   const spouse=me.spouse?`<h3>${esc(me.name)}’s spouse</h3><div class="dhead"><figure class="cam">${portrait(me.spouse,140,true)}<figcaption>Wed ${esc(me.wed.when)}</figcaption></figure>
     <div style="min-width:0"><div class="given">${esc(me.spouse.name)}</div><div class="of">of House ${esc(me.spouse.house)}, now of House ${esc(me.house)}</div><p style="margin:6px 0">${spLine(me.spouse)}</p>
-    <p><b>Marriage warmth: ${me.wed.warmth}</b> <span class="muted">adds ${2*Math.max(0,me.wed.warmth)}% to the year\u2019s birth odds and ${Math.floor(Math.max(0,me.wed.warmth)/3)} stat point${Math.floor(Math.max(0,me.wed.warmth)/3)===1?'':'s'} to each child</span></p>${(me.inlaws||[]).length?`<p>Bitter in-law${me.inlaws.length>1?'s':''}: ${me.inlaws.map(x=>esc(x.name)).join(', ')} <span class="muted">(scorned at the wedding)</span></p>`:''}${me.lover?`<p style="color:var(--rose)">Secret lover: ${esc(me.lover.name)} of House ${esc(me.lover.house)} <span class="muted">(since ${esc(me.lover.since)})</span></p>`:''}</div></div>`:'';
+    <p><b>Marriage warmth: ${me.wed.warmth}</b> <span class="muted">adds ${2*Math.max(0,me.wed.warmth)}% to the year\u2019s birth odds and ${Math.floor(Math.max(0,me.wed.warmth)/3)} stat point${Math.floor(Math.max(0,me.wed.warmth)/3)===1?'':'s'} to each child</span></p>${(me.inlaws||[]).length?`<p>Bitter in-law${me.inlaws.length>1?'s':''}: ${me.inlaws.map(x=>esc(x.name)).join(', ')} <span class="muted">(scorned at the wedding)</span></p>`:''}${loversOf(me).length?`<p style="color:var(--rose)">Secret lover${loversOf(me).length>1?'s':''}: ${loversOf(me).map(L=>esc(L.name)+' of House '+esc(L.house)).join(', ')}</p>`:''}${!SECRET_LOVER_UPDATE&&me.lover?`<p style="color:var(--rose)">Secret lover: ${esc(me.lover.name)} of House ${esc(me.lover.house)} <span class="muted">(since ${esc(me.lover.since)})</span></p>`:''}</div></div>`:'';
   return `<section class="pane d"><h2>House ${esc(me.house)}</h2>
     <p class="muted" style="margin:0 0 8px">${POWER[myPower()].n}. A married couple may have a child at the end of any season (at most one a year).</p>
     ${standingPanel()}
     ${summonsPanel()}
+    ${loverPanel()}
     ${h?`<div class="acts" style="margin:0 0 10px"><button class="main" data-act="jump" ${G.date?'disabled':''}>Skip to the next coming of age</button></div>
       <p class="muted" style="font-size:15px;margin:-4px 0 10px">Everyone ages, more children may come, and most suitors now at court will have wed elsewhere. Whoever comes of age first then takes up the courting.</p>`:''}
-    <h3>The family</h3>${canSwitch()?'':'<p class="muted" style="font-size:15px;margin:0 0 6px">Who courts, and auto-run, can be changed at the start of a season, before any date.</p>'}<ul class="famlist">${G.family.filter(m=>!m.dead&&m.kage>=OF_AGE).concat(ageQueue().map(q=>q.c)).map(row).join('')}</ul>
+    <h3>The family</h3>${canSwitch()?'':'<p class="muted" style="font-size:15px;margin:0 0 6px">Who courts, and auto-run, can be changed at the start of a season, before any date.</p>'}<ul class="famlist">${G.family.filter(m=>!m.dead&&m.kage>=OF_AGE).concat(ageQueue().map(q=>q.c).filter(c=>!c.hidden)).map(row).join('')}</ul>
     ${G.family.some(m=>m.dead)?`<details class="strules"><summary>The dead</summary><ul class="famlist">${G.family.filter(m=>m.dead).map(row).join('')}</ul></details>`:''}
     ${spouse}</section>`;
   /* (legacy view below kept unreachable for reference) */
@@ -1413,7 +1483,7 @@ function renderSuitors(){const s=suitor(G.sel)||G.suitors[0];if(s)G.sel=s.id;
     <h3>${p.His} stats</h3>${statBlock(s.st,false)}
     <h3>Dates together</h3>${hist}
     ${proposalPanel(s)}</section>`;
-  return `<div class="grid">${roster}${dossier}</div>`}
+  return `${offerPanel()}<div class="grid">${roster}${dossier}</div>`}
 
 function renderDate(){const d=G.date;if(!d)return '<section class="pane"><p class="empty">No date in progress.</p></section>';
   const s=suitor(d.sid)||(G.me.spouse&&G.me.spouse.id===d.sid?G.me.spouse:null),V=VENUES[d.venue],p=pr(s);
@@ -1451,6 +1521,7 @@ function renderRules(){return `<section class="pane rules"><h2>How it works</h2>
   <p><b>The date turns</b> on how it goes. After a moment that raised affection, the next is a <b>warm moment</b>: +1 to every roll. After one that lowered it, the next is a <b>recovery</b>: success gives +1 more, failure costs 1 more. A neutral moment leaves the next one plain. The wedding feast does not turn.</p>
   <p><b>Events.</b> About two dates in five, something happens on the second or third moment. An <b>interruption</b> (their rival, your kin, a chaperone, the weather, a drunken noble) or a <b>turn</b> from the suitor (a confession, a test drawn from their drive, a quarrel over something they dislike) replaces that moment’s choices with two ways to answer, each a plain stat roll: success +1 (a passed test +2), failure −1, a 1 adds +1 and a 10 costs 1 more. Facing down a rival moves their progress back a step, or forward if you fail. Or a <b>bold move</b> appears as a fourth choice: ±2 on top of the roll.</p>
   <p><b>Brothers and sisters at court.</b> Sometimes two suitors come from the same house. Court both while their affection is within 2 of each other and they turn <b>jealous</b>: each date with one has a 50% chance the other crashes it (success +1 and soothes them; failure −1 with both). While you court both, their house will only give the <b>elder</b> in marriage. At the wedding, a sibling you left at Fond or more makes a <b>scene</b> at the feast. Afterwards, one left at Fond stays a <b>bitter in-law</b> (warmth −1); one left Smitten or more offers to be your <b>secret lover</b>, and turns bitter if refused.</p>
+  ${SECRET_LOVER_UPDATE?`<p><b>Secret lovers.</b> Let a suitor go once they are Smitten (25%) or Devoted (50%), and they may offer to stay on as your secret lover: it doesn’t have to be love. A courtier may keep several, wed or not. On Your House, the courtier can meet their own lovers: a <b>tryst</b> uses one of the season’s dates and is rolled on their Insight. Other family members keep their affairs on their own, with one tryst for each lover at every season’s end (the courtier too, when on auto-run). Kept hidden, the lover’s house thinks one step better of yours, and a child may come of it (half the mother’s yearly birth odds, at most one a year with each lover). Seen, the affair is found out and ends: lasting standing −${SCANDAL_STAND}, and marriage warmth −${SCANDAL_WARMTH} if wed. A lover’s child is raised in secret in the lover’s house. Each year there is a ${Math.round(REVEAL_ODDS*100)}% chance it comes out, and it always does when the child comes of age: the same scandal, and the child joins your house, <b>base-born</b>. Base-born children may court like any other, but inherit only after the true-born.</p>`:''}
   <p><b>Propensities</b> shift the target. A trait that warms to your approach gives +1, one put off by it gives −2. Serving their drive gives +1 for the approach and +1 for the topic. A loved topic gives +1, a disliked one −2. The total is capped at ±4. The venue adds +1 or −1 to every roll if it is full of things they love or dislike.</p>
   <p><b>House power</b> sets how much affection it takes to win a suitor. Each track is 10 + 2d4 long (7 + 2d4 for Goblin, Ratfolk, Succubus and Dhampir), and Devoted is its end: ${Object.values(POWER).map(p=>`${p.n.toLowerCase()} ${p.r}`).join(', ')}. The other tiers sit at the same share of every track.</p>
   <p><b>The great houses.</b> Eighteen houses are rolled with each game (four each of Kin and Fey, three each of Fur and Pel, and one of each monster folk) and last across the generations (The Court lists them). Each year twelve come to court: every strong and middling house, with the weak drawn for the seats left, and one of those weak seats always goes to a monster house. Only houses at court send new suitors and rivals; anyone already being courted stays. Suitors, rivals and drunken lords all come from them, and a suitor’s track is their house’s power. Each house holds an <b>opinion</b> of yours, −5 to +5: its suitors start with affection shifted by half of it, and at +3 or more every roll with them gets +1 (−1 at −3 or less). A marriage into a house raises its opinion by 3; shaming one of its lords costs 2. Each year a house’s power may drift a step, and its opinion may ease back toward neutral (toward +2 if bound to yours by marriage).</p>
@@ -1519,6 +1590,7 @@ document.addEventListener('click',e=>{const t=e.target.closest('button');if(!t)r
     view='you';save();render()}return}
   if(t.dataset.sum!=null){answerSummons(+t.dataset.sum,t.dataset.so);return}
   if(t.dataset.deed){doDeed(t.dataset.deed);return}
+  if(t.dataset.tryst){tryst(t.dataset.tryst,t.dataset.lv);return}
   if(t.dataset.train){const m=G.me,k=t.dataset.train,c=m.st[k];if(c<STAT_MAX&&(m.train||0)>=c){m.train-=c;m.st[k]++;save();render()}return}
   if(t.dataset.st){const m=G.me,k=t.dataset.st,dv=+t.dataset.dv,used=STATS.reduce((x,y)=>x+m.st[y],0);
     if(G.me.locked)return;if(dv>0&&(used>=POOL_TOTAL||m.st[k]>=STAT_MAX))return;if(dv<0&&m.st[k]<=STAT_MIN)return;m.st[k]+=dv;save();render();return}
@@ -1538,8 +1610,9 @@ document.addEventListener('click',e=>{const t=e.target.closest('button');if(!t)r
     case 'endSeason':if(!G.date)endSeason();break;
     case 'ask':{const x=suitor(G.sel);if(x&&!askBlock(x)&&!G.me.auto)venuePick=true;render();break}
     case 'cancelVenue':venuePick=false;render();break;
-    case 'release':{const i=G.suitors.findIndex(x=>x.id===G.sel);if(i>=0){G.suitors.splice(i,1);if(!G.suitors.length)moreFaces();G.sel=G.suitors[Math.min(i,G.suitors.length-1)].id}save();render();break}
-    case 'lover':case 'noLover':{const d=G.date,c=d&&d.lover&&suitor(d.lover.id);if(c){if(a==='lover'){G.me.lover={name:c.name,house:c.house,sex:c.sex,sp:c.sp,pic:c.pic,since:seasonName()};G.suitors=G.suitors.filter(x=>x!==c);
+    case 'takeLover':case 'refuseLover':takeLover(a==='takeLover');save();render();break;
+    case 'release':{const i=G.suitors.findIndex(x=>x.id===G.sel);if(i>=0){loverOffer(G.suitors[i]);G.suitors.splice(i,1);if(!G.suitors.length)moreFaces();G.sel=G.suitors[Math.min(i,G.suitors.length-1)].id}save();render();break}
+    case 'lover':case 'noLover':{const d=G.date,c=d&&d.lover&&suitor(d.lover.id);if(c){if(a==='lover'){if(SECRET_LOVER_UPDATE)G.me.lovers=(G.me.lovers||[]).concat([loverFrom(c)]);else G.me.lover={name:c.name,house:c.house,sex:c.sex,sp:c.sp,pic:c.pic,since:seasonName()};G.suitors=G.suitors.filter(x=>x!==c);
       if(G.log&&G.log[0])G.log[0].news.push({c:'warn',t:`${esc(c.name)} of House ${esc(c.house)} becomes ${esc(G.me.name)}’s secret lover.`})}else bitterInlaw(c)}if(d)delete d.lover;save();render();break}
     case 'next':nextBeat();break;
     case 'endDate':endDate();break;
@@ -1557,7 +1630,10 @@ function boot(){view='suitors';venuePick=false;confirmEnd=false;G=load();if(G){
   /* older saves: one courtier, spouse kept globally */
   if(!G.family){const me=G.me;me.id='f0';if(G.spouse){me.spouse=G.spouse;me.wed=G.wed}delete G.spouse;delete G.wed;if(G.dateCount>0)me.locked=true;G.family=[me];G.fnext=1;G.meId='f0';
     me.interest=me.sex==='m'?'f':'m';G.me=me}
-  G.me=G.family.find(x=>x.id===G.meId)||G.family[0];migrateHouses();migratePool();if(G.baseStanding!=null&&G.baseStanding<myFloor()){G.baseStanding=myFloor();syncStanding()}if(G.baseStanding==null){G.baseStanding=G.me.track;G.boosts=[];G.tempProg=0}if(!G.time)G.time={y:1,s:0,used:0};if(!G.log)G.log=[];if(G.me.kage<20)G.me.kage=20;if(!G.me.track)G.me.track=rollTrack(G.me.sp);if(!G.me.line)G.me.line=newLine(G.me);if(G.me.train==null)G.me.train=0;G.suitors.forEach(s=>{if(!s.std)addStandards(s)});G.suitors.forEach(s=>{if(!s.track||(MONSTER_KEYS.includes(s.sp)&&s.track>15)){s.track=rollTrack(s.sp);delete s.power}s.aff=Math.min(s.aff,affMax(s))});if(autoAdvance())view='chronicle';save();if(G.date)view='date';render()}else newGame()}
+  G.me=G.family.find(x=>x.id===G.meId)||G.family[0];
+  /* older saves: a single secret lover becomes the first of a list */
+  if(!SECRET_LOVER_UPDATE)clearLoverUpdate();else G.family.forEach(m=>{if(m.lover){const L=m.lover;G.lnext=(G.lnext||0)+1;m.lovers=(m.lovers||[]).concat([{id:'L'+G.lnext,name:L.name,house:L.house,sex:L.sex,sp:L.sp,pic:L.pic,kage:m.kage,yrs:toSpAge(m.kage,L.sp),since:L.since,kids:0}]);delete m.lover}});
+  migrateHouses();migratePool();if(G.baseStanding!=null&&G.baseStanding<myFloor()){G.baseStanding=myFloor();syncStanding()}if(G.baseStanding==null){G.baseStanding=G.me.track;G.boosts=[];G.tempProg=0}if(!G.time)G.time={y:1,s:0,used:0};if(!G.log)G.log=[];if(G.me.kage<20)G.me.kage=20;if(!G.me.track)G.me.track=rollTrack(G.me.sp);if(!G.me.line)G.me.line=newLine(G.me);if(G.me.train==null)G.me.train=0;G.suitors.forEach(s=>{if(!s.std)addStandards(s)});G.suitors.forEach(s=>{if(!s.track||(MONSTER_KEYS.includes(s.sp)&&s.track>15)){s.track=rollTrack(s.sp);delete s.power}s.aff=Math.min(s.aff,affMax(s))});if(autoAdvance())view='chronicle';save();if(G.date)view='date';render()}else newGame()}
 initSlots();boot();
 </script>
 </body></html>
