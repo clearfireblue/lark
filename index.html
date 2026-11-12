@@ -905,7 +905,7 @@ function birthCheck(news){
 /* THE SECRET LOVER UPDATE: set to false to turn off everything in this block (affair offers, trysts, kin's own affairs, hidden children coming to light,
    the Your House panel and the rules text). Off, the wedding-feast lover goes back to how it was before (a name on Your House, no mechanics),
    and at load every save's lovers, pending offer and still-hidden children are cleared out. Base-born children already in the family keep their place. */
-const SECRET_LOVER_UPDATE=false;
+const SECRET_LOVER_UPDATE=true;
 const LOVER_ODDS={smit:.25,dev:.5},SCANDAL_WARMTH=2,SCANDAL_STAND=1,REVEAL_ODDS=.1;
 const trueBorn=m=>!m.base;
 const loversOf=m=>(SECRET_LOVER_UPDATE&&m&&!m.dead&&m.lovers)||[];
