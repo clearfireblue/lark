@@ -2,6 +2,14 @@
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Love Lines</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Love Lines">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#ece2d6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#18121a" media="(prefers-color-scheme: dark)">
 <script src="nobles.js"></script>
 <script src="casual.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1635,5 +1643,8 @@ function boot(){view='suitors';venuePick=false;confirmEnd=false;G=load();if(G){
   if(!SECRET_LOVER_UPDATE)clearLoverUpdate();else G.family.forEach(m=>{if(m.lover){const L=m.lover;G.lnext=(G.lnext||0)+1;m.lovers=(m.lovers||[]).concat([{id:'L'+G.lnext,name:L.name,house:L.house,sex:L.sex,sp:L.sp,pic:L.pic,kage:m.kage,yrs:toSpAge(m.kage,L.sp),since:L.since,kids:0}]);delete m.lover}});
   migrateHouses();migratePool();if(G.baseStanding!=null&&G.baseStanding<myFloor()){G.baseStanding=myFloor();syncStanding()}if(G.baseStanding==null){G.baseStanding=G.me.track;G.boosts=[];G.tempProg=0}if(!G.time)G.time={y:1,s:0,used:0};if(!G.log)G.log=[];if(G.me.kage<20)G.me.kage=20;if(!G.me.track)G.me.track=rollTrack(G.me.sp);if(!G.me.line)G.me.line=newLine(G.me);if(G.me.train==null)G.me.train=0;G.suitors.forEach(s=>{if(!s.std)addStandards(s)});G.suitors.forEach(s=>{if(!s.track||(MONSTER_KEYS.includes(s.sp)&&s.track>15)){s.track=rollTrack(s.sp);delete s.power}s.aff=Math.min(s.aff,affMax(s))});if(autoAdvance())view='chronicle';save();if(G.date)view='date';render()}else newGame()}
 initSlots();boot();
+</script>
+<script>
+if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{})})}
 </script>
 </body></html>
